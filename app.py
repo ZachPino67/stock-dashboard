@@ -140,4 +140,16 @@ st.dataframe(
     column_config={
         "Correlation": st.column_config.ProgressColumn(
             "Correlation (0-1)",
-            help="1.0 =
+            help="1.0 = Moves Identically. 0.0 = No Relation.",
+            min_value=-1,
+            max_value=1,
+            format="%.2f",
+        ),
+        "Performance": st.column_config.NumberColumn(
+            "Return (%)",
+            format="%.2f%%"
+        )
+    },
+    hide_index=True,
+    use_container_width=True
+)
