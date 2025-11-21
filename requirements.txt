@@ -4,3 +4,5 @@ pandas
 pandas_ta
 vaderSentiment
 feedparser
+plotly
+requests
