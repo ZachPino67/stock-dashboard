@@ -36,7 +36,43 @@ if 'page' not in st.session_state: st.session_state.page = 'home'
 
 def set_page(page_name):
     st.session_state.page = page_name
+import requests # Make sure this is imported
 
+# --- SMART SEARCH HELPER ---
+@st.cache_data(ttl=86400) # Cache results for 24h
+def lookup_ticker(query):
+    """
+    Translates 'Apple' -> 'AAPL' using Yahoo's Autocomplete API.
+    """
+    query = query.strip().upper()
+    
+    # 1. Check if it's already a valid ticker (Fast Check)
+    # If the user types 'AAPL', we don't need to search
+    try:
+        t = yf.Ticker(query)
+        if not t.history(period="1d").empty:
+            return query
+    except:
+        pass
+
+    # 2. Use Yahoo Autocomplete API
+    try:
+        url = f"https://query2.finance.yahoo.com/v1/finance/search?q={query}"
+        headers = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
+        response = requests.get(url, headers=headers, timeout=5)
+        data = response.json()
+        
+        if 'quotes' in data and len(data['quotes']) > 0:
+            # Get the first result that is an EQUITY
+            for quote in data['quotes']:
+                if quote.get('quoteType') == 'EQUITY':
+                    return quote['symbol']
+            # Fallback to first result
+            return data['quotes'][0]['symbol']
+    except Exception as e:
+        print(f"Search Error: {e}")
+        
+    return query # Return original if search fails
 # ==================================================
 #                 PAGE 1: HOMEPAGE
 # ==================================================
@@ -159,7 +195,7 @@ def page_academy():
 #                 PAGE 3: THE TERMINAL (PRO)
 # ==================================================
 def page_terminal():
-    # --- REUSING THE ADVANCED BLACK-SCHOLES ENGINE ---
+    # --- REUSING THE QUANT ENGINE ---
     class QuantEngine:
         def __init__(self, risk_free_rate=0.045):
             self.r = risk_free_rate
@@ -204,97 +240,135 @@ def page_terminal():
         return df
 
     st.title("📐 OpStruct Pro Terminal")
-    st.markdown("Institutional-grade trade structuring based on Delta and Volatility.")
+    st.markdown("Institutional-grade trade structuring.")
     
     c1, c2, c3 = st.columns([1, 2, 1])
     with c1:
-        ticker = st.text_input("Ticker", "NVDA").upper()
+        # 1. INPUT: Allow raw text
+        raw_input = st.text_input("Company or Ticker", "Apple").strip()
+        
+        # 2. SMART LOOKUP: Convert "Apple" -> "AAPL"
+        ticker = lookup_ticker(raw_input)
+        
+        # Show the user what we found
+        if ticker != raw_input.upper():
+            st.caption(f"✅ Found: **{ticker}**")
     
-    # Fetch Logic
+    # --- ERROR HANDLING WRAPPER (Prevents Crash) ---
     try:
         stock = yf.Ticker(ticker)
+        
+        # CHECK 1: Does history exist?
+        hist = stock.history(period="5d")
+        if hist.empty:
+            st.error(f"❌ Could not find data for '{ticker}'. Please try another name.")
+            return # STOP HERE if no data
+        
+        # CHECK 2: Do options exist?
         exps = stock.options
+        if not exps:
+            st.warning(f"⚠️ '{ticker}' has no options chain available.")
+            return # STOP HERE if no options
+
         with c2: expiry = st.selectbox("Expiration", exps[:6])
         with c3: view = st.selectbox("Strategy", ["Bullish (Call Spread)", "Bearish (Put Spread)", "Neutral (Income Strangle)"])
-    except:
-        st.error("Ticker not found or no options data.")
-        return
 
-    # Run Engine
-    with st.spinner("Running Black-Scholes Model..."):
-        hist = stock.history(period="5d")
-        current_price = hist['Close'].iloc[-1]
-        
-        # Calculate Greeks
-        _, calls, puts = get_chain(ticker, expiry)
-        calls = calculate_greeks(calls, current_price, expiry, "call")
-        puts = calculate_greeks(puts, current_price, expiry, "put")
-        
-        st.metric("Spot Price", f"${current_price:.2f}", f"{(datetime.strptime(expiry, '%Y-%m-%d') - datetime.now()).days} DTE")
-        
-        # --- STRATEGY LOGIC ---
-        trade = {}
-        
-        if "Bullish" in view:
-            # Buy 50 Delta Call, Sell 30 Delta Call
-            buy_leg = quant.find_closest_strike(calls, 0.50)
-            sell_leg = quant.find_closest_strike(calls, 0.30)
+        # Run Engine
+        with st.spinner(f"Structuring trades for {ticker}..."):
+            current_price = hist['Close'].iloc[-1]
             
-            buy_leg['side'] = "BUY"; sell_leg['side'] = "SELL"
-            buy_leg['type'] = "call"; sell_leg['type'] = "call"
+            # Calculate Greeks
+            _, calls, puts = get_chain(ticker, expiry)
+            calls = calculate_greeks(calls, current_price, expiry, "call")
+            puts = calculate_greeks(puts, current_price, expiry, "put")
             
-            trade = {"Legs": [buy_leg, sell_leg], "Type": "Call Debit Spread (Bullish)"}
+            st.metric("Spot Price", f"${current_price:.2f}", f"{(datetime.strptime(expiry, '%Y-%m-%d') - datetime.now()).days} DTE")
+            
+            # --- STRATEGY LOGIC ---
+            trade = {}
+            
+            if "Bullish" in view:
+                buy_leg = quant.find_closest_strike(calls, 0.50)
+                sell_leg = quant.find_closest_strike(calls, 0.30)
+                buy_leg['side'] = "BUY"; sell_leg['side'] = "SELL"
+                buy_leg['type'] = "call"; sell_leg['type'] = "call"
+                trade = {"Legs": [buy_leg, sell_leg], "Type": "Call Debit Spread (Bullish)"}
 
-        elif "Bearish" in view:
-            # Buy -50 Delta Put, Sell -30 Delta Put
-            buy_leg = quant.find_closest_strike(puts, -0.50, "put")
-            sell_leg = quant.find_closest_strike(puts, -0.30, "put")
-            
-            buy_leg['side'] = "BUY"; sell_leg['side'] = "SELL"
-            buy_leg['type'] = "put"; sell_leg['type'] = "put"
-            
-            trade = {"Legs": [buy_leg, sell_leg], "Type": "Put Debit Spread (Bearish)"}
+            elif "Bearish" in view:
+                buy_leg = quant.find_closest_strike(puts, -0.50, "put")
+                sell_leg = quant.find_closest_strike(puts, -0.30, "put")
+                buy_leg['side'] = "BUY"; sell_leg['side'] = "SELL"
+                buy_leg['type'] = "put"; sell_leg['type'] = "put"
+                trade = {"Legs": [buy_leg, sell_leg], "Type": "Put Debit Spread (Bearish)"}
 
-        elif "Neutral" in view:
-            # Short Strangle: Sell 20 Delta Call, Sell -20 Delta Put
-            call_leg = quant.find_closest_strike(calls, 0.20)
-            put_leg = quant.find_closest_strike(puts, -0.20, "put")
+            elif "Neutral" in view:
+                call_leg = quant.find_closest_strike(calls, 0.20)
+                put_leg = quant.find_closest_strike(puts, -0.20, "put")
+                call_leg['side'] = "SELL"; put_leg['side'] = "SELL"
+                call_leg['type'] = "call"; put_leg['type'] = "put"
+                trade = {"Legs": [call_leg, put_leg], "Type": "Short Strangle (Income)"}
             
-            call_leg['side'] = "SELL"; put_leg['side'] = "SELL"
-            call_leg['type'] = "call"; put_leg['type'] = "put"
-            
-            trade = {"Legs": [call_leg, put_leg], "Type": "Short Strangle (Income)"}
-        
-        # --- DYNAMIC RENDERER ---
-        if trade:
-            st.subheader(f"🤖 Generated: {trade['Type']}")
-            
-            total_price = 0
-            legs_html = ""
-            
-            for leg in trade['Legs']:
-                price = leg['lastPrice']
-                strike = leg['strike']
-                delta = leg['calc_delta']
-                side = leg['side']
+            # --- RENDERER ---
+            if trade:
+                st.subheader(f"🤖 Generated: {trade['Type']}")
+                total_price = 0
+                legs_html = ""
                 
-                if side == "BUY": total_price += price
-                else: total_price -= price
+                for leg in trade['Legs']:
+                    price = leg['lastPrice']
+                    strike = leg['strike']
+                    delta = leg['calc_delta']
+                    side = leg['side']
+                    
+                    if side == "BUY": total_price += price
+                    else: total_price -= price
+                    
+                    color = "🟢" if side == "BUY" else "🔴"
+                    legs_html += f"<p>{color} <b>{side}</b> ${strike} (Delta: {delta:.2f}) - ${price:.2f}</p>"
+
+                cost_label = f"Est. Debit: ${total_price*100:.2f}" if total_price > 0 else f"Est. Credit: ${abs(total_price)*100:.2f} (Income)"
+
+                st.markdown(f"""
+                <div style="background: #111; padding: 20px; border-left: 5px solid #00FF00; border-radius: 10px;">
+                    {legs_html}
+                    <hr style="border-color: #444;">
+                    <h3>{cost_label}</h3>
+                </div>
+                """, unsafe_allow_html=True)
                 
-                color = "🟢" if side == "BUY" else "🔴"
-                legs_html += f"<p>{color} <b>{side}</b> ${strike} (Delta: {delta:.2f}) - ${price:.2f}</p>"
+                # SIMULATION LAB
+                st.divider()
+                st.subheader("🧪 Simulation Lab")
+                sim_col1, sim_col2 = st.columns(2)
+                with sim_col1: days_forward = st.slider("⏳ Time Travel (Days Passed)", 0, 30, 0)
+                with sim_col2: vol_adjust = st.slider("⚡ Volatility Adjustment (%)", -50, 50, 0)
 
-            cost_label = f"Est. Debit: ${total_price*100:.2f}" if total_price > 0 else f"Est. Credit: ${abs(total_price)*100:.2f} (Income)"
+                spot_range = np.linspace(current_price * 0.85, current_price * 1.15, 100)
+                
+                # Simulated P&L
+                pnl_simulated = np.zeros_like(spot_range) - (total_price * 100)
+                total_days = (datetime.strptime(expiry, "%Y-%m-%d") - datetime.now()).days
+                sim_T = max(0.001, (total_days - days_forward) / 365.0)
+                
+                for leg in trade['Legs']:
+                    sim_sigma = (leg['impliedVolatility'] * (1 + vol_adjust/100))
+                    if sim_sigma < 0.01: sim_sigma = 0.01
+                    if leg['type'] == "call": new_price = quant.black_scholes_call(spot_range, leg['strike'], sim_T, sim_sigma)
+                    else: new_price = quant.black_scholes_put(spot_range, leg['strike'], sim_T, sim_sigma)
+                    
+                    if leg['side'] == "BUY": pnl_simulated += (new_price * 100)
+                    else: pnl_simulated -= (new_price * 100)
 
-            st.markdown(f"""
-            <div style="background: #111; padding: 20px; border-left: 5px solid #00FF00; border-radius: 10px;">
-                {legs_html}
-                <hr style="border-color: #444;">
-                <h3>{cost_label}</h3>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            st.divider()
+                fig = go.Figure()
+                fig.add_trace(go.Scatter(x=spot_range, y=pnl_simulated, mode='lines', name='Simulated P&L', fill='tozeroy', line=dict(color='#00FF00' if pnl_simulated.max() > 0 else '#FF4B4B')))
+                fig.add_hline(y=0, line_color="gray", line_dash="dash")
+                fig.add_vline(x=current_price, line_color="yellow")
+                fig.update_layout(template="plotly_dark", height=400, title="Projected Outcome", yaxis_title="P/L ($)")
+                st.plotly_chart(fig, use_container_width=True)
+
+    except Exception as e:
+        st.error(f"Analysis Error: {e}")
+        st.caption("Common causes: Invalid ticker, no options chain, or API timeout.")
             
             # ==================================================
             #           THE SIMULATION LAB (NEW)
