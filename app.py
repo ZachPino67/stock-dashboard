@@ -155,7 +155,6 @@ def page_academy():
         with col4:
             st.metric("ν Vega", "Fear", "Volatility")
             st.caption("How much the price changes when the market gets scared (Volatility).")
-
 # ==================================================
 #                 PAGE 3: THE TERMINAL (PRO)
 # ==================================================
@@ -174,7 +173,8 @@ def page_terminal():
             d1 = (np.log(S / K) + (self.r + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
             d2 = d1 - sigma * np.sqrt(T)
             return norm.cdf(d1) - 1
-        def find_closest_strike(self, df, target_delta):
+        def find_closest_strike(self, df, target_delta, option_type="call"):
+            # Helper to find specific delta strikes
             df['delta_diff'] = abs(df['calc_delta'] - target_delta)
             return df.loc[df['delta_diff'].idxmin()]
 
@@ -198,6 +198,7 @@ def page_terminal():
         return df
 
     st.title("📐 OpStruct Pro Terminal")
+    st.markdown("Institutional-grade trade structuring based on Delta and Volatility.")
     
     c1, c2, c3 = st.columns([1, 2, 1])
     with c1:
@@ -208,44 +209,94 @@ def page_terminal():
         stock = yf.Ticker(ticker)
         exps = stock.options
         with c2: expiry = st.selectbox("Expiration", exps[:6])
-        with c3: view = st.selectbox("Strategy", ["Bullish (Call Spread)", "Bearish (Put Spread)", "Neutral (Iron Condor)"])
+        with c3: view = st.selectbox("Strategy", ["Bullish (Call Spread)", "Bearish (Put Spread)", "Neutral (Income Strangle)"])
     except:
-        st.error("Ticker not found.")
+        st.error("Ticker not found or no options data.")
         return
 
     # Run Engine
-    hist = stock.history(period="5d")
-    current_price = hist['Close'].iloc[-1]
-    
-    # Calculate
-    _, calls, puts = get_chain(ticker, expiry)
-    calls = calculate_greeks(calls, current_price, expiry, "call")
-    puts = calculate_greeks(puts, current_price, expiry, "put")
-    
-    st.metric("Spot Price", f"${current_price:.2f}", f"{(datetime.strptime(expiry, '%Y-%m-%d') - datetime.now()).days} DTE")
-    
-    # Simplified Structuring for Speed
-    trade = {}
-    if "Bullish" in view:
-        buy_leg = quant.find_closest_strike(calls, 0.50)
-        sell_leg = quant.find_closest_strike(calls, 0.30)
-        trade = {"Legs": [buy_leg, sell_leg], "Type": "Call Debit Spread"}
-    elif "Bearish" in view:
-        buy_leg = quant.find_closest_strike(puts, -0.50)
-        sell_leg = quant.find_closest_strike(puts, -0.30)
-        trade = {"Legs": [buy_leg, sell_leg], "Type": "Put Debit Spread"}
-    
-    if trade:
-        st.subheader(f"🤖 Generated: {trade['Type']}")
-        cost = trade['Legs'][0]['lastPrice'] - trade['Legs'][1]['lastPrice']
-        st.markdown(f"""
-        <div style="background: #111; padding: 20px; border-left: 5px solid #00FF00;">
-            <p>🟢 <b>BUY</b> ${trade['Legs'][0]['strike']} (Delta: {trade['Legs'][0]['calc_delta']:.2f})</p>
-            <p>🔴 <b>SELL</b> ${trade['Legs'][1]['strike']} (Delta: {trade['Legs'][1]['calc_delta']:.2f})</p>
-            <hr>
-            <h3>Est. Cost: ${cost*100:.2f}</h3>
-        </div>
-        """, unsafe_allow_html=True)
+    with st.spinner("Running Black-Scholes Model..."):
+        hist = stock.history(period="5d")
+        current_price = hist['Close'].iloc[-1]
+        
+        # Calculate Greeks
+        _, calls, puts = get_chain(ticker, expiry)
+        calls = calculate_greeks(calls, current_price, expiry, "call")
+        puts = calculate_greeks(puts, current_price, expiry, "put")
+        
+        st.metric("Spot Price", f"${current_price:.2f}", f"{(datetime.strptime(expiry, '%Y-%m-%d') - datetime.now()).days} DTE")
+        
+        # --- STRATEGY LOGIC ---
+        trade = {}
+        
+        if "Bullish" in view:
+            # Buy 50 Delta Call, Sell 30 Delta Call
+            buy_leg = quant.find_closest_strike(calls, 0.50)
+            sell_leg = quant.find_closest_strike(calls, 0.30)
+            
+            # Label the legs
+            buy_leg['side'] = "BUY"
+            sell_leg['side'] = "SELL"
+            
+            trade = {"Legs": [buy_leg, sell_leg], "Type": "Call Debit Spread (Bullish)"}
+
+        elif "Bearish" in view:
+            # Buy -50 Delta Put, Sell -30 Delta Put
+            buy_leg = quant.find_closest_strike(puts, -0.50, "put")
+            sell_leg = quant.find_closest_strike(puts, -0.30, "put")
+            
+            buy_leg['side'] = "BUY"
+            sell_leg['side'] = "SELL"
+            
+            trade = {"Legs": [buy_leg, sell_leg], "Type": "Put Debit Spread (Bearish)"}
+
+        elif "Neutral" in view:
+            # Short Strangle: Sell 20 Delta Call, Sell -20 Delta Put
+            # This collects premium from both sides.
+            call_leg = quant.find_closest_strike(calls, 0.20)
+            put_leg = quant.find_closest_strike(puts, -0.20, "put")
+            
+            call_leg['side'] = "SELL"
+            put_leg['side'] = "SELL"
+            
+            trade = {"Legs": [call_leg, put_leg], "Type": "Short Strangle (Income)"}
+        
+        # --- DYNAMIC RENDERER ---
+        if trade:
+            st.subheader(f"🤖 Generated: {trade['Type']}")
+            
+            # Calculate Net Price
+            total_price = 0
+            legs_html = ""
+            
+            for leg in trade['Legs']:
+                price = leg['lastPrice']
+                strike = leg['strike']
+                delta = leg['calc_delta']
+                side = leg['side']
+                
+                # Math: If we BUY, we pay money (+). If we SELL, we get money (-).
+                # (Standard notation: Debit is positive cost, Credit is negative cost)
+                if side == "BUY": total_price += price
+                else: total_price -= price
+                
+                # Visuals
+                color = "🟢" if side == "BUY" else "🔴"
+                legs_html += f"<p>{color} <b>{side}</b> ${strike} (Delta: {delta:.2f}) - ${price:.2f}</p>"
+
+            # Format Cost vs Credit
+            if total_price > 0:
+                cost_label = f"Est. Debit: ${total_price*100:.2f}"
+            else:
+                cost_label = f"Est. Credit: ${abs(total_price)*100:.2f} (Income)"
+
+            st.markdown(f"""
+            <div style="background: #111; padding: 20px; border-left: 5px solid #00FF00; border-radius: 10px;">
+                {legs_html}
+                <hr style="border-color: #444;">
+                <h3>{cost_label}</h3>
+            </div>
+            """, unsafe_allow_html=True)
 # ==================================================
 #                 MAIN CONTROLLER
 # ==================================================
