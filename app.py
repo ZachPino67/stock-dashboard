@@ -2,272 +2,219 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import numpy as np
-from datetime import datetime
-import time
+from scipy.stats import norm
+from datetime import datetime, timedelta
+import plotly.graph_objects as go
 
-# --- PAGE CONFIG ---
-st.set_page_config(page_title="TradeWizard", page_icon="🔮", layout="centered")
+# --- CONFIGURATION ---
+st.set_page_config(page_title="OpStruct AI", page_icon="📐", layout="wide")
 
-# --- CUSTOM CSS (GAME DESIGN) ---
+# --- CSS: THE BLOOMBERG AESTHETIC ---
 st.markdown("""
 <style>
-    /* Hide standard Streamlit UI junk */
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    header {visibility: hidden;}
-    
-    /* Game-like Typography */
-    h1 {color: #FF4B4B; font-family: 'Helvetica', sans-serif; font-weight: 800; font-size: 3rem;}
-    p {font-size: 1.2rem; font-family: 'Arial', sans-serif;}
-    
-    /* Big Button Styling */
-    div.stButton > button:first-child {
-        height: 3em;
-        width: 100%;
-        border-radius: 20px;
-        border: 2px solid #f0f2f6;
-        font-size: 20px;
-        font-weight: bold;
-        box-shadow: 0px 4px 6px rgba(0,0,0,0.1);
-        transition: all 0.2s;
+    .stApp {background-color: #0e1117; color: #e0e0e0;}
+    div.stButton > button {
+        background-color: #222; border: 1px solid #444; color: white; font-family: 'Courier New';
     }
-    div.stButton > button:hover {
-        transform: scale(1.02);
-        border-color: #FF4B4B;
+    div.stButton > button:hover {border-color: #00FF00; color: #00FF00;}
+    .trade-card {
+        background-color: #161b22; padding: 20px; border-radius: 10px; border-left: 5px solid #00FF00;
+        font-family: 'Courier New'; margin-bottom: 20px;
     }
-    
-    /* Card Styling */
-    .game-card {
-        background-color: #ffffff;
-        padding: 20px;
-        border-radius: 15px;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.05);
-        margin-bottom: 20px;
-        border: 1px solid #e0e0e0;
-        text-align: center;
-    }
-    
-    /* Feedback Boxes */
-    .feedback-good {background-color: #d4edda; color: #155724; padding: 15px; border-radius: 10px; border: 1px solid #c3e6cb;}
-    .feedback-bad {background-color: #f8d7da; color: #721c24; padding: 15px; border-radius: 10px; border: 1px solid #f5c6cb;}
-    .feedback-warn {background-color: #fff3cd; color: #856404; padding: 15px; border-radius: 10px; border: 1px solid #ffeeba;}
-    
+    h1, h2, h3 {font-family: 'Arial Black'; color: #f0f0f0;}
+    .stat-box {text-align: center; padding: 10px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px;}
 </style>
 """, unsafe_allow_html=True)
 
-# --- SESSION STATE (MEMORY) ---
-if 'step' not in st.session_state: st.session_state.step = 0 # Start at Home
-if 'balance' not in st.session_state: st.session_state.balance = 10000.0
-if 'portfolio' not in st.session_state: st.session_state.portfolio = []
-if 'ticker' not in st.session_state: st.session_state.ticker = ""
-if 'direction' not in st.session_state: st.session_state.direction = ""
+# --- BLACK-SCHOLES & MATH MODULES ---
+def calculate_probability_of_profit(current_price, strike_price, days_to_exp, iv):
+    # Simplified PoP calculation using standard distribution
+    # Probability of closing ITM
+    if days_to_exp <= 0: return 0
+    sigma = iv * np.sqrt(days_to_exp / 365)
+    d2 = (np.log(current_price / strike_price) - (0.5 * sigma ** 2)) / sigma
+    prob_itm = norm.cdf(d2)
+    return prob_itm
 
-# --- COMPLEX BACKEND (HIDDEN) ---
 @st.cache_data(ttl=60)
-def get_oracle_advice(ticker, direction):
-    # This is the Military-Grade Logic hidden behind the curtain
+def get_option_chain_data(ticker):
+    stock = yf.Ticker(ticker)
     try:
-        stock = yf.Ticker(ticker)
-        hist = stock.history(period="1mo")
-        if hist.empty: return "ERROR", 0, 0
-        
-        price = hist['Close'].iloc[-1]
-        
-        # 1. MAX PAIN CALCULATION (The Magnet)
-        try:
-            exps = stock.options
-            if exps:
-                opt = stock.option_chain(exps[0])
-                calls = opt.calls
-                puts = opt.puts
-                # Weighted Average Strike based on Open Interest
-                total_oi = calls['openInterest'].sum() + puts['openInterest'].sum()
-                if total_oi > 0:
-                    magnet = ((calls['strike'] * calls['openInterest']).sum() + 
-                              (puts['strike'] * puts['openInterest']).sum()) / total_oi
-                else:
-                    magnet = price
-            else:
-                magnet = price
-        except:
-            magnet = price
-
-        # 2. VOLATILITY CHECK (The Fear)
-        vol = hist['Close'].pct_change().std() * np.sqrt(252) * 100
-        
-        # 3. THE VERDICT
-        verdict = "GOOD"
-        reason = "Looks safe!"
-        
-        # Rule: Don't bet against the Magnet
-        if direction == "CALL" and magnet < price * 0.98:
-            verdict = "BAD"
-            reason = f"The 'Big Banks' want to pull {ticker} DOWN to ${magnet:.0f}."
-        elif direction == "PUT" and magnet > price * 1.02:
-            verdict = "BAD"
-            reason = f"The 'Big Banks' want to push {ticker} UP to ${magnet:.0f}."
-            
-        # Rule: Don't buy in extreme volatility (Options too expensive)
-        if vol > 60:
-            verdict = "WARNING"
-            reason = f"Panic is high ({vol:.0f}% volatility). Options are overpriced right now."
-            
-        return verdict, reason, price
-        
+        exps = stock.options
+        return stock, exps
     except:
-        return "ERROR", 0, 0
+        return None, []
 
-# --- NAVIGATOR (PROGRESS BAR) ---
-def show_progress(percent):
-    st.progress(percent)
+# --- UI: SIDEBAR (INPUTS) ---
+st.sidebar.title("📐 OpStruct AI")
+st.sidebar.markdown("Automated Derivatives Structuring")
 
-# ==================================================
-#                 STEP 0: HOMEPAGE
-# ==================================================
-if st.session_state.step == 0:
-    st.markdown("<br>", unsafe_allow_html=True)
-    st.markdown("<h1 style='text-align: center;'>🔮 TradeWizard</h1>", unsafe_allow_html=True)
-    st.markdown(f"<div class='game-card'><h3>💰 Balance: ${st.session_state.balance:,.2f}</h3></div>", unsafe_allow_html=True)
-    
-    st.markdown("<p style='text-align: center;'>Practice trading without losing your shirt.<br>The <b>Oracle AI</b> will protect you from bad deals.</p>", unsafe_allow_html=True)
-    
-    c1, c2, c3 = st.columns([1, 2, 1])
-    with c2:
-        if st.button("🎮 START NEW TRADE"):
-            st.session_state.step = 1
-            st.rerun()
-            
-    # Show Portfolio if exists
-    if st.session_state.portfolio:
-        st.divider()
-        st.markdown("### 📜 Your History")
-        st.dataframe(pd.DataFrame(st.session_state.portfolio), use_container_width=True)
+ticker = st.sidebar.text_input("Underlying Asset", "NVDA").upper()
+stock, exps = get_option_chain_data(ticker)
 
-# ==================================================
-#                 STEP 1: PICK STOCK
-# ==================================================
-elif st.session_state.step == 1:
-    show_progress(25)
-    st.markdown("### 🔎 Step 1: Which company?")
-    
-    # 1. SEARCH BAR (The "Expand Beyond 7" Feature)
-    user_input = st.text_input("Search ANY Stock Ticker (e.g. GME, AMC, COIN)", placeholder="Type here...").upper()
-    
-    if user_input:
-        # Verify it exists
-        if st.button(f"Select {user_input} ->"):
-            st.session_state.ticker = user_input
-            st.session_state.step = 2
-            st.rerun()
-    
-    st.markdown("--- OR PICK A POPULAR ONE ---")
-    
-    # 2. QUICK CHIPS (Gamified)
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        if st.button("🍎 AAPL"): 
-            st.session_state.ticker = "AAPL"
-            st.session_state.step = 2
-            st.rerun()
-    with c2:
-        if st.button("🚗 TSLA"):
-            st.session_state.ticker = "TSLA"
-            st.session_state.step = 2
-            st.rerun()
-    with c3:
-        if st.button("🤖 NVDA"):
-            st.session_state.ticker = "NVDA"
-            st.session_state.step = 2
-            st.rerun()
+if not exps:
+    st.error("Invalid Ticker")
+    st.stop()
 
-    if st.button("⬅️ Back"):
-        st.session_state.step = 0
-        st.rerun()
+# 1. SELECT EXPIRY
+expiry = st.sidebar.selectbox("Target Expiration", exps[:6]) # Show next 6 expiries
 
-# ==================================================
-#                 STEP 2: UP OR DOWN?
-# ==================================================
-elif st.session_state.step == 2:
-    show_progress(50)
-    st.markdown(f"### 🔮 Step 2: Where is {st.session_state.ticker} going?")
-    
-    c1, c2 = st.columns(2)
-    with c1:
-        if st.button("🚀 UP (Call)"):
-            st.session_state.direction = "CALL"
-            st.session_state.step = 3
-            st.rerun()
-            
-    with c2:
-        if st.button("📉 DOWN (Put)"):
-            st.session_state.direction = "PUT"
-            st.session_state.step = 3
-            st.rerun()
-            
-    if st.button("⬅️ Back"):
-        st.session_state.step = 1
-        st.rerun()
+# 2. DEFINE STRATEGY VIEW
+view = st.sidebar.radio("Market Outlook", ["Bullish (Go Up)", "Bearish (Go Down)", "Neutral (Stay Flat)"])
 
-# ==================================================
-#                 STEP 3: THE BET
-# ==================================================
-elif st.session_state.step == 3:
-    show_progress(75)
-    st.markdown(f"### 💸 Step 3: How much to bet?")
+# --- MAIN DASHBOARD ---
+st.title(f"⚡ {ticker} Structuring Engine")
+
+# Get Real-time Data
+hist = stock.history(period="1mo")
+current_price = hist['Close'].iloc[-1]
+iv_rank = (hist['Close'].pct_change().std() * np.sqrt(252) * 100) # Simplified IV Proxy
+
+# Header Metrics
+c1, c2, c3, c4 = st.columns(4)
+c1.metric("Spot Price", f"${current_price:.2f}")
+c2.metric("Implied Volatility", f"{iv_rank:.1f}%")
+c3.metric("Selected Expiry", expiry)
+
+days_to_exp = (datetime.strptime(expiry, "%Y-%m-%d") - datetime.now()).days
+c4.metric("DTE (Days)", days_to_exp)
+
+st.divider()
+
+# --- THE STRUCTURING LOGIC (AI BRAIN) ---
+# This replaces the "Up/Down" game with actual Option Selection
+
+opt = stock.option_chain(expiry)
+calls = opt.calls
+puts = opt.puts
+
+trade_structure = {}
+
+if view == "Bullish (Go Up)":
+    # AI Strategy: Long Call Spread (Debit Spread)
+    # Buy ATM Call, Sell OTM Call (to fund it)
+    buy_strike = calls.iloc[(calls['strike'] - current_price).abs().argsort()[:1]]['strike'].values[0]
+    sell_strike = calls[calls['strike'] > buy_strike].iloc[0]['strike']
     
-    # Slider for gamified feel
-    bet = st.slider("Bet Amount ($)", 100, int(st.session_state.balance), 1000)
-    st.markdown(f"<h2 style='text-align: center;'>${bet:,.2f}</h2>", unsafe_allow_html=True)
+    # Get Prices
+    buy_cost = calls[calls['strike'] == buy_strike]['lastPrice'].values[0]
+    sell_credit = calls[calls['strike'] == sell_strike]['lastPrice'].values[0]
+    net_debit = buy_cost - sell_credit
     
-    # THE ORACLE CHECK (This is the "Complex Reasoning" appearing simply)
-    st.divider()
-    with st.spinner("🔮 The Oracle is analyzing Wall Street data..."):
-        time.sleep(1) # Fake delay for dramatic effect
-        verdict, reason, price = get_oracle_advice(st.session_state.ticker, st.session_state.direction)
+    trade_structure = {
+        "Name": "Bull Call Spread",
+        "Leg 1": f"BUY {expiry} ${buy_strike} CALL",
+        "Leg 2": f"SELL {expiry} ${sell_strike} CALL",
+        "Cost": net_debit * 100,
+        "Max Profit": ((sell_strike - buy_strike) - net_debit) * 100,
+        "Breakeven": buy_strike + net_debit,
+        "Thesis": "Moderately Bullish. Capped upside but reduced cost."
+    }
+
+elif view == "Bearish (Go Down)":
+    # AI Strategy: Long Put Spread (Debit Spread)
+    buy_strike = puts.iloc[(puts['strike'] - current_price).abs().argsort()[:1]]['strike'].values[0]
+    sell_strike = puts[puts['strike'] < buy_strike].iloc[-1]['strike'] # Further OTM
     
-    # DISPLAY VERDICT
-    if verdict == "GOOD":
-        st.markdown(f"<div class='feedback-good'>✅ <b>GREEN LIGHT</b><br>{reason}</div>", unsafe_allow_html=True)
-        disable_button = False
-    elif verdict == "WARNING":
-        st.markdown(f"<div class='feedback-warn'>⚠️ <b>BE CAREFUL</b><br>{reason}</div>", unsafe_allow_html=True)
-        disable_button = False
-    elif verdict == "BAD":
-        st.markdown(f"<div class='feedback-bad'>🛑 <b>DANGER</b><br>{reason}</div>", unsafe_allow_html=True)
-        disable_button = False # We let them trade, but we warned them (Robinhood style)
+    buy_cost = puts[puts['strike'] == buy_strike]['lastPrice'].values[0]
+    sell_credit = puts[puts['strike'] == sell_strike]['lastPrice'].values[0]
+    net_debit = buy_cost - sell_credit
+    
+    trade_structure = {
+        "Name": "Bear Put Spread",
+        "Leg 1": f"BUY {expiry} ${buy_strike} PUT",
+        "Leg 2": f"SELL {expiry} ${sell_strike} PUT",
+        "Cost": net_debit * 100,
+        "Max Profit": ((buy_strike - sell_strike) - net_debit) * 100,
+        "Breakeven": buy_strike - net_debit,
+        "Thesis": "Cheaper than buying a raw Put. Protections against IV crush."
+    }
+
+elif view == "Neutral (Stay Flat)":
+    # AI Strategy: Iron Condor (Selling Volatility)
+    # Sell OTM Call & Sell OTM Put
+    upper_strike = calls[calls['strike'] > current_price * 1.05].iloc[0]['strike']
+    lower_strike = puts[puts['strike'] < current_price * 0.95].iloc[-1]['strike']
+    
+    # Simplified (Short Strangle for demo)
+    call_credit = calls[calls['strike'] == upper_strike]['lastPrice'].values[0]
+    put_credit = puts[puts['strike'] == lower_strike]['lastPrice'].values[0]
+    total_credit = call_credit + put_credit
+    
+    trade_structure = {
+        "Name": "Short Strangle (Income)",
+        "Leg 1": f"SELL {expiry} ${upper_strike} CALL",
+        "Leg 2": f"SELL {expiry} ${lower_strike} PUT",
+        "Cost": f"+${total_credit * 100:.2f} (Credit)",
+        "Max Profit": total_credit * 100,
+        "Breakeven": f"${lower_strike - total_credit:.2f} / ${upper_strike + total_credit:.2f}",
+        "Thesis": "Profits if stock stays between the strikes. Harvests Theta decay."
+    }
+
+# --- DISPLAY THE "PROFESSIONAL" TRADE CARD ---
+st.subheader("🤖 AI Proposed Structure")
+
+c1, c2 = st.columns([2, 1])
+
+with c1:
+    st.markdown(f"""
+    <div class="trade-card">
+        <h3>{trade_structure['Name']}</h3>
+        <p style="color: #00FF00;">{trade_structure['Leg 1']}</p>
+        <p style="color: #FF4B4B;">{trade_structure['Leg 2']}</p>
+        <hr style="border-color: #333;">
+        <div style="display: flex; justify-content: space-between;">
+            <div>
+                <small>EST. COST</small><br>
+                <span style="font-size: 1.5em; font-weight: bold;">${trade_structure['Cost']:.2f}</span>
+            </div>
+            <div>
+                <small>MAX PROFIT</small><br>
+                <span style="font-size: 1.5em; color: #00FF00;">${trade_structure['Max Profit']:.2f}</span>
+            </div>
+            <div>
+                <small>BREAKEVEN</small><br>
+                <span>{trade_structure['Breakeven']}</span>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    st.info(f"🧠 **AI Thesis:** {trade_structure['Thesis']}")
+
+with c2:
+    # VISUALIZE THE P&L
+    st.markdown("##### P&L Simulation")
+    
+    # Simple Payoff Chart Logic
+    spot_range = np.linspace(current_price * 0.8, current_price * 1.2, 100)
+    if "Call Spread" in trade_structure['Name']:
+        payoff = np.where(spot_range > buy_strike, spot_range - buy_strike, 0) - \
+                 np.where(spot_range > sell_strike, spot_range - sell_strike, 0) - net_debit
+    elif "Put Spread" in trade_structure['Name']:
+         payoff = np.where(spot_range < buy_strike, buy_strike - spot_range, 0) - \
+                  np.where(spot_range < sell_strike, sell_strike - spot_range, 0) - net_debit
     else:
-        st.error("Could not find stock data. Is the ticker right?")
-        disable_button = True
+        # Strangle
+        payoff = total_credit - np.where(spot_range > upper_strike, spot_range - upper_strike, 0) - \
+                 np.where(spot_range < lower_strike, lower_strike - spot_range, 0)
 
-    st.write("")
-    if st.button("🎰 PLACE TRADE", disabled=disable_button):
-        # Execute Trade
-        st.session_state.balance -= bet
-        st.session_state.portfolio.append({
-            "Date": datetime.now().strftime("%Y-%m-%d %H:%M"),
-            "Ticker": st.session_state.ticker,
-            "Type": st.session_state.direction,
-            "Price": price,
-            "Amount": bet,
-            "Result": "PENDING"
-        })
-        st.session_state.step = 4
-        st.rerun()
-        
-    if st.button("⬅️ Back"):
-        st.session_state.step = 2
-        st.rerun()
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=spot_range, y=payoff, mode='lines', fill='tozeroy', 
+                             line=dict(color='#00FF00' if payoff[-1] > 0 else '#FF4B4B')))
+    fig.add_hline(y=0, line_color="white", line_dash="dash")
+    fig.add_vline(x=current_price, line_color="yellow", annotation_text="Spot")
+    fig.update_layout(template="plotly_dark", height=300, margin=dict(l=0,r=0,t=0,b=0), 
+                      xaxis_title="Stock Price at Expiry", yaxis_title="Profit/Loss")
+    st.plotly_chart(fig, use_container_width=True)
 
-# ==================================================
-#                 STEP 4: SUCCESS
-# ==================================================
-elif st.session_state.step == 4:
-    show_progress(100)
-    st.balloons() # DOPAMINE HIT
-    
-    st.markdown("<h1 style='text-align: center;'>🎉 TRADE EXECUTED!</h1>", unsafe_allow_html=True)
-    st.markdown(f"<div class='game-card'><p>You bet <b>${st.session_state.portfolio[-1]['Amount']}</b> on <b>{st.session_state.ticker}</b> going <b>{st.session_state.portfolio[-1]['Type']}</b>.</p></div>", unsafe_allow_html=True)
-    
-    if st.button("🏠 Return Home"):
-        st.session_state.step = 0
-        st.rerun()
+# --- EXPLAINER FOR LINKEDIN ---
+with st.expander("🔍 How this works (Technical Details)"):
+    st.markdown("""
+    **This is not a simple Buy/Sell button.**
+    1. **Chain Scanning:** The Python backend pulls the full Option Chain for the selected expiry.
+    2. **Strike Selection:** It algorithmically finds strikes based on Delta/Price closeness.
+    3. **Spread Construction:** It pairs a Long option with a Short option to create a 'Spread.'
+       * *Why?* This reduces the cost of the trade and caps the risk. This is how professionals trade.
+    4. **P&L Modeling:** The chart simulates the profit/loss across a range of future prices.
+    """)
