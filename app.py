@@ -164,17 +164,23 @@ def page_terminal():
         def __init__(self, risk_free_rate=0.045):
             self.r = risk_free_rate
         def black_scholes_call(self, S, K, T, sigma):
-            if T <= 0: return max(0, S - K)
+            if T <= 0.001: return max(0, S - K)
             d1 = (np.log(S / K) + (self.r + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
             d2 = d1 - sigma * np.sqrt(T)
-            return norm.cdf(d1)
+            return S * norm.cdf(d1) - K * np.exp(-self.r * T) * norm.cdf(d2)
         def black_scholes_put(self, S, K, T, sigma):
-            if T <= 0: return max(0, K - S)
+            if T <= 0.001: return max(0, K - S)
             d1 = (np.log(S / K) + (self.r + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
             d2 = d1 - sigma * np.sqrt(T)
-            return norm.cdf(d1) - 1
+            return K * np.exp(-self.r * T) * norm.cdf(-d2) - S * norm.cdf(-d1)
+        
+        def get_delta(self, S, K, T, sigma, type="call"):
+            if T <= 0.001: return 0
+            d1 = (np.log(S / K) + (self.r + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
+            if type == "call": return norm.cdf(d1)
+            else: return norm.cdf(d1) - 1
+
         def find_closest_strike(self, df, target_delta, option_type="call"):
-            # Helper to find specific delta strikes
             df['delta_diff'] = abs(df['calc_delta'] - target_delta)
             return df.loc[df['delta_diff'].idxmin()]
 
@@ -191,8 +197,8 @@ def page_terminal():
         deltas = []
         for index, row in df.iterrows():
             iv = row['impliedVolatility'] if row['impliedVolatility'] > 0.01 else 0.5
-            if type == "call": d = quant.black_scholes_call(spot, row['strike'], T, iv)
-            else: d = quant.black_scholes_put(spot, row['strike'], T, iv)
+            if type == "call": d = quant.get_delta(spot, row['strike'], T, iv, "call")
+            else: d = quant.get_delta(spot, row['strike'], T, iv, "put")
             deltas.append(d)
         df['calc_delta'] = deltas
         return df
@@ -234,9 +240,8 @@ def page_terminal():
             buy_leg = quant.find_closest_strike(calls, 0.50)
             sell_leg = quant.find_closest_strike(calls, 0.30)
             
-            # Label the legs
-            buy_leg['side'] = "BUY"
-            sell_leg['side'] = "SELL"
+            buy_leg['side'] = "BUY"; sell_leg['side'] = "SELL"
+            buy_leg['type'] = "call"; sell_leg['type'] = "call"
             
             trade = {"Legs": [buy_leg, sell_leg], "Type": "Call Debit Spread (Bullish)"}
 
@@ -245,19 +250,18 @@ def page_terminal():
             buy_leg = quant.find_closest_strike(puts, -0.50, "put")
             sell_leg = quant.find_closest_strike(puts, -0.30, "put")
             
-            buy_leg['side'] = "BUY"
-            sell_leg['side'] = "SELL"
+            buy_leg['side'] = "BUY"; sell_leg['side'] = "SELL"
+            buy_leg['type'] = "put"; sell_leg['type'] = "put"
             
             trade = {"Legs": [buy_leg, sell_leg], "Type": "Put Debit Spread (Bearish)"}
 
         elif "Neutral" in view:
             # Short Strangle: Sell 20 Delta Call, Sell -20 Delta Put
-            # This collects premium from both sides.
             call_leg = quant.find_closest_strike(calls, 0.20)
             put_leg = quant.find_closest_strike(puts, -0.20, "put")
             
-            call_leg['side'] = "SELL"
-            put_leg['side'] = "SELL"
+            call_leg['side'] = "SELL"; put_leg['side'] = "SELL"
+            call_leg['type'] = "call"; put_leg['type'] = "put"
             
             trade = {"Legs": [call_leg, put_leg], "Type": "Short Strangle (Income)"}
         
@@ -265,7 +269,6 @@ def page_terminal():
         if trade:
             st.subheader(f"🤖 Generated: {trade['Type']}")
             
-            # Calculate Net Price
             total_price = 0
             legs_html = ""
             
@@ -275,20 +278,13 @@ def page_terminal():
                 delta = leg['calc_delta']
                 side = leg['side']
                 
-                # Math: If we BUY, we pay money (+). If we SELL, we get money (-).
-                # (Standard notation: Debit is positive cost, Credit is negative cost)
                 if side == "BUY": total_price += price
                 else: total_price -= price
                 
-                # Visuals
                 color = "🟢" if side == "BUY" else "🔴"
                 legs_html += f"<p>{color} <b>{side}</b> ${strike} (Delta: {delta:.2f}) - ${price:.2f}</p>"
 
-            # Format Cost vs Credit
-            if total_price > 0:
-                cost_label = f"Est. Debit: ${total_price*100:.2f}"
-            else:
-                cost_label = f"Est. Credit: ${abs(total_price)*100:.2f} (Income)"
+            cost_label = f"Est. Debit: ${total_price*100:.2f}" if total_price > 0 else f"Est. Credit: ${abs(total_price)*100:.2f} (Income)"
 
             st.markdown(f"""
             <div style="background: #111; padding: 20px; border-left: 5px solid #00FF00; border-radius: 10px;">
@@ -297,6 +293,83 @@ def page_terminal():
                 <h3>{cost_label}</h3>
             </div>
             """, unsafe_allow_html=True)
+            
+            st.divider()
+            
+            # ==================================================
+            #           THE SIMULATION LAB (NEW)
+            # ==================================================
+            st.subheader("🧪 Simulation Lab (The 'What If' Machine)")
+            st.caption("Options change price before expiration. Use the sliders to simulate Time Decay and Volatility Shocks.")
+            
+            sim_col1, sim_col2 = st.columns(2)
+            with sim_col1:
+                days_forward = st.slider("⏳ Time Travel (Days Passed)", 0, 30, 0)
+            with sim_col2:
+                vol_adjust = st.slider("⚡ Volatility Adjustment (%)", -50, 50, 0)
+
+            # --- SIMULATION ENGINE ---
+            spot_range = np.linspace(current_price * 0.85, current_price * 1.15, 100)
+            
+            # 1. P&L at Expiration (Static)
+            pnl_expiration = np.zeros_like(spot_range) - (total_price * 100)
+            for leg in trade['Legs']:
+                if leg['type'] == "call":
+                    payoff = np.maximum(0, spot_range - leg['strike']) * 100
+                else:
+                    payoff = np.maximum(0, leg['strike'] - spot_range) * 100
+                    
+                if leg['side'] == "BUY": pnl_expiration += payoff
+                else: pnl_expiration -= payoff
+                
+            # 2. P&L Now (Simulated Black-Scholes)
+            pnl_simulated = np.zeros_like(spot_range) - (total_price * 100)
+            
+            # Calculate T (Time remaining after sliding days forward)
+            total_days = (datetime.strptime(expiry, "%Y-%m-%d") - datetime.now()).days
+            sim_T = max(0.001, (total_days - days_forward) / 365.0)
+            
+            for leg in trade['Legs']:
+                # Adjust IV
+                sim_sigma = (leg['impliedVolatility'] * (1 + vol_adjust/100))
+                if sim_sigma < 0.01: sim_sigma = 0.01
+                
+                # Re-Price Option using Black-Scholes
+                if leg['type'] == "call":
+                    new_price = quant.black_scholes_call(spot_range, leg['strike'], sim_T, sim_sigma)
+                else:
+                    new_price = quant.black_scholes_put(spot_range, leg['strike'], sim_T, sim_sigma)
+                
+                if leg['side'] == "BUY": pnl_simulated += (new_price * 100)
+                else: pnl_simulated -= (new_price * 100)
+
+            # --- PLOTTING ---
+            fig = go.Figure()
+            
+            # Plot Expiration (Dotted)
+            fig.add_trace(go.Scatter(x=spot_range, y=pnl_expiration, mode='lines', 
+                                     name='At Expiration', line=dict(color='white', dash='dot')))
+            
+            # Plot Simulated (Solid Color)
+            fig.add_trace(go.Scatter(x=spot_range, y=pnl_simulated, mode='lines', 
+                                     name=f'Simulated (T+{days_forward})', fill='tozeroy',
+                                     line=dict(color='#00FF00' if pnl_simulated.max() > 0 else '#FF4B4B')))
+            
+            fig.add_hline(y=0, line_color="gray", line_width=1)
+            fig.add_vline(x=current_price, line_color="yellow", annotation_text="Spot Price")
+            
+            fig.update_layout(template="plotly_dark", height=500, 
+                              title="P&L: Expiration vs. Simulation",
+                              xaxis_title="Stock Price", yaxis_title="Profit/Loss ($)")
+            
+            st.plotly_chart(fig, use_container_width=True)
+            
+            st.info("""
+            **How to read this:**
+            * **Dotted Line:** What you make if you hold until the very end.
+            * **Colored Area:** What you make **on that specific day**.
+            * **Tip:** Notice how 'Time Travel' shrinks the curve (Theta Decay) and 'Volatility' expands/contracts it.
+            """)
 # ==================================================
 #                 MAIN CONTROLLER
 # ==================================================
