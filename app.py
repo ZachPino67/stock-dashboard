@@ -246,7 +246,6 @@ def page_terminal():
             <h3>Est. Cost: ${cost*100:.2f}</h3>
         </div>
         """, unsafe_allow_html=True)
-
 # ==================================================
 #                 MAIN CONTROLLER
 # ==================================================
@@ -256,6 +255,6 @@ with st.sidebar:
     if st.button("🎓 Academy", use_container_width=True): set_page('academy')
     if st.button("📐 Terminal", use_container_width=True): set_page('terminal')
 
-if st.session_state.page == 'home': homepage()
+if st.session_state.page == 'home': page_home()      # <--- The fix: changed 'homepage()' to 'page_home()'
 elif st.session_state.page == 'academy': page_academy()
 elif st.session_state.page == 'terminal': page_terminal()
