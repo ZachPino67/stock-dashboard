@@ -6,3 +6,4 @@ vaderSentiment
 feedparser
 plotly
 requests
+skipy
