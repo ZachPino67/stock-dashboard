@@ -25,12 +25,6 @@ st.markdown("""
     .concept-title {color: #00FF00; font-weight: bold; font-size: 1.2rem;}
     .concept-emoji {font-size: 2rem;}
     
-    /* STAT BOXES */
-    .stat-metric {
-        background: #1f1f1f; padding: 10px; border-radius: 5px; 
-        text-align: center; border: 1px solid #333;
-    }
-    
     /* NAVIGATION */
     div.stButton > button {
         width: 100%; border-radius: 8px; font-weight: bold;
@@ -123,43 +117,38 @@ def page_academy():
 #                 PAGE 3: THE TERMINAL (PRO)
 # ==================================================
 def page_terminal():
-   # ==================================================
-#           THE QUANT ENGINE (MATH CORE)
-# ==================================================
-class QuantEngine:
-    def __init__(self, risk_free_rate=0.045):
-        self.r = risk_free_rate
+    # --- QUANT ENGINE (FIXED: VECTOR SAFE) ---
+    class QuantEngine:
+        def __init__(self, risk_free_rate=0.045):
+            self.r = risk_free_rate
 
-    def black_scholes_call(self, S, K, T, sigma):
-        # Use np.maximum for vector safety
-        if T <= 0.001: return np.maximum(0.0, S - K)
+        def black_scholes_call(self, S, K, T, sigma):
+            # Using np.maximum handles both single numbers AND lists (vectors)
+            # This fixes the "ambiguous truth value" error
+            if isinstance(T, float) and T <= 0.001: return max(0.0, S - K)
+            
+            d1 = (np.log(S / K) + (self.r + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
+            d2 = d1 - sigma * np.sqrt(T)
+            return S * norm.cdf(d1) - K * np.exp(-self.r * T) * norm.cdf(d2)
+
+        def black_scholes_put(self, S, K, T, sigma):
+            if isinstance(T, float) and T <= 0.001: return max(0.0, K - S)
+            
+            d1 = (np.log(S / K) + (self.r + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
+            d2 = d1 - sigma * np.sqrt(T)
+            return K * np.exp(-self.r * T) * norm.cdf(-d2) - S * norm.cdf(-d1)
         
-        d1 = (np.log(S / K) + (self.r + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
-        d2 = d1 - sigma * np.sqrt(T)
-        return S * norm.cdf(d1) - K * np.exp(-self.r * T) * norm.cdf(d2)
+        def get_delta(self, S, K, T, sigma, type="call"):
+            if T <= 0.001: return 0
+            d1 = (np.log(S / K) + (self.r + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
+            if type == "call": return norm.cdf(d1)
+            else: return norm.cdf(d1) - 1
 
-    def black_scholes_put(self, S, K, T, sigma):
-        # Use np.maximum for vector safety
-        if T <= 0.001: return np.maximum(0.0, K - S)
-        
-        d1 = (np.log(S / K) + (self.r + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
-        d2 = d1 - sigma * np.sqrt(T)
-        return K * np.exp(-self.r * T) * norm.cdf(-d2) - S * norm.cdf(-d1)
-    
-    def get_delta(self, S, K, T, sigma, type="call"):
-        if T <= 0.001: return 0.0
-        
-        d1 = (np.log(S / K) + (self.r + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
-        if type == "call": return norm.cdf(d1)
-        else: return norm.cdf(d1) - 1
+        def find_closest_strike(self, df, target_delta):
+            df['delta_diff'] = abs(df['calc_delta'] - target_delta)
+            return df.loc[df['delta_diff'].idxmin()]
 
-    def find_closest_strike(self, df, target_delta):
-        # Helper to find specific delta strikes
-        df['delta_diff'] = abs(df['calc_delta'] - target_delta)
-        return df.loc[df['delta_diff'].idxmin()]
-
-# Initialize Engine
-quant = QuantEngine()
+    quant = QuantEngine()
 
     def get_chain(ticker, expiry):
         stock = yf.Ticker(ticker)
@@ -199,7 +188,7 @@ quant = QuantEngine()
             st.warning(f"⚠️ '{ticker}' has no options chain.")
             return
 
-        with c2: expiry = st.selectbox("Expiration", exps[:12]) # Increased to 12
+        with c2: expiry = st.selectbox("Expiration", exps[:12])
         with c3: view = st.selectbox("Strategy", ["Bullish (Call Spread)", "Bearish (Put Spread)", "Neutral (Income Strangle)"])
 
         with st.spinner(f"Structuring trades for {ticker}..."):
@@ -272,22 +261,22 @@ quant = QuantEngine()
                 st.subheader("🧪 Casino Probability Lab")
                 st.caption("Advanced Risk Analysis using Monte Carlo approximations.")
                 
-                # DYNAMIC SLIDERS (UPDATED)
                 sim_col1, sim_col2 = st.columns(2)
                 with sim_col1: 
-                    # Limit days to actual expiration
-                    days_forward = st.slider("⏳ Time Travel (Days Passed)", 0, dte, 0)
+                    # If DTE is 0 (expires today), set max to 1 to avoid slider error
+                    slider_max = dte if dte > 0 else 1
+                    days_forward = st.slider("⏳ Time Travel (Days Passed)", 0, slider_max, 0)
                 with sim_col2: 
-                    # Expanded Volatility Range
                     vol_adjust = st.slider("⚡ Volatility Adjustment (%)", -80, 300, 0)
 
-                # --- MATH ENGINE ---
-                spot_range = np.linspace(current_price * 0.7, current_price * 1.3, 200) # Wider range
+                # MATH ENGINE (VECTORIZED)
+                spot_range = np.linspace(current_price * 0.7, current_price * 1.3, 200)
                 
                 # 1. Calculate P&L at Expiration
                 pnl_expiration = np.zeros_like(spot_range) - (total_price * 100)
                 for leg in trade['Legs']:
                     if leg['type'] == "call":
+                        # Use np.maximum for vector operations
                         payoff = np.maximum(0, spot_range - leg['strike']) * 100
                     else:
                         payoff = np.maximum(0, leg['strike'] - spot_range) * 100
@@ -297,7 +286,9 @@ quant = QuantEngine()
 
                 # 2. Calculate P&L Simulated (T+n)
                 pnl_simulated = np.zeros_like(spot_range) - (total_price * 100)
-                sim_T = max(0.001, (dte - days_forward) / 365.0) # Time remaining
+                
+                # If dte is 0, sim_T is small epsilon
+                sim_T = max(0.001, (dte - days_forward) / 365.0)
                 
                 for leg in trade['Legs']:
                     sim_sigma = (leg['impliedVolatility'] * (1 + vol_adjust/100))
@@ -311,19 +302,17 @@ quant = QuantEngine()
                     if leg['side'] == "BUY": pnl_simulated += (new_price * 100)
                     else: pnl_simulated -= (new_price * 100)
 
-                # 3. CALCULATE PROBABILITY & EV (NEW)
-                # We use the current price PDF (Bell Curve) to weigh the outcomes
+                # 3. CALCULATE PROBABILITY & EV
                 sigma_now = trade['Legs'][0]['impliedVolatility']
-                T_full = dte / 365.0
+                T_full = max(0.001, dte / 365.0)
                 
-                # Probability Density Function at Expiry
                 pdf = norm.pdf(np.log(spot_range / current_price), loc=(0.045 - 0.5 * sigma_now**2) * T_full, scale=sigma_now * np.sqrt(T_full))
-                pdf = pdf / pdf.sum() # Normalize so sum is 100%
+                pdf = pdf / pdf.sum()
                 
                 expected_value = np.sum(pnl_expiration * pdf)
                 prob_profit = np.sum(pdf[pnl_expiration > 0]) * 100
                 
-                # DISPLAY METRICS
+                # METRICS
                 m1, m2, m3 = st.columns(3)
                 m1.metric("Win Probability (PoP)", f"{prob_profit:.1f}%")
                 
