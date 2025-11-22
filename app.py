@@ -25,6 +25,12 @@ st.markdown("""
     .concept-title {color: #00FF00; font-weight: bold; font-size: 1.2rem;}
     .concept-emoji {font-size: 2rem;}
     
+    /* STAT BOXES */
+    .stat-metric {
+        background: #1f1f1f; padding: 10px; border-radius: 5px; 
+        text-align: center; border: 1px solid #333;
+    }
+    
     /* NAVIGATION */
     div.stButton > button {
         width: 100%; border-radius: 8px; font-weight: bold;
@@ -182,7 +188,7 @@ def page_terminal():
             st.warning(f"⚠️ '{ticker}' has no options chain.")
             return
 
-        with c2: expiry = st.selectbox("Expiration", exps[:6])
+        with c2: expiry = st.selectbox("Expiration", exps[:12]) # Increased to 12
         with c3: view = st.selectbox("Strategy", ["Bullish (Call Spread)", "Bearish (Put Spread)", "Neutral (Income Strangle)"])
 
         with st.spinner(f"Structuring trades for {ticker}..."):
@@ -193,7 +199,9 @@ def page_terminal():
             calls = calculate_greeks(calls, current_price, expiry, "call")
             puts = calculate_greeks(puts, current_price, expiry, "put")
             
-            st.metric("Spot Price", f"${current_price:.2f}", f"{(datetime.strptime(expiry, '%Y-%m-%d') - datetime.now()).days} DTE")
+            # CALC DAYS TO EXPIRY
+            dte = (datetime.strptime(expiry, '%Y-%m-%d') - datetime.now()).days
+            st.metric("Spot Price", f"${current_price:.2f}", f"{dte} DTE")
             
             # STRATEGY LOGIC
             trade = {}
@@ -246,21 +254,39 @@ def page_terminal():
                 </div>
                 """, unsafe_allow_html=True)
                 
-                # SIMULATION LAB (INDENTATION FIXED HERE)
+                # ==================================================
+                #           SIMULATION LAB & PROBABILITIES
+                # ==================================================
                 st.divider()
-                st.subheader("🧪 Simulation Lab (The 'What If' Machine)")
-                st.caption("Options change price before expiration. Use the sliders to simulate Time Decay and Volatility Shocks.")
+                st.subheader("🧪 Casino Probability Lab")
+                st.caption("Advanced Risk Analysis using Monte Carlo approximations.")
                 
+                # DYNAMIC SLIDERS (UPDATED)
                 sim_col1, sim_col2 = st.columns(2)
-                with sim_col1: days_forward = st.slider("⏳ Time Travel (Days Passed)", 0, 30, 0)
-                with sim_col2: vol_adjust = st.slider("⚡ Volatility Adjustment (%)", -50, 50, 0)
+                with sim_col1: 
+                    # Limit days to actual expiration
+                    days_forward = st.slider("⏳ Time Travel (Days Passed)", 0, dte, 0)
+                with sim_col2: 
+                    # Expanded Volatility Range
+                    vol_adjust = st.slider("⚡ Volatility Adjustment (%)", -80, 300, 0)
 
-                spot_range = np.linspace(current_price * 0.85, current_price * 1.15, 100)
+                # --- MATH ENGINE ---
+                spot_range = np.linspace(current_price * 0.7, current_price * 1.3, 200) # Wider range
                 
-                # Simulated P&L
+                # 1. Calculate P&L at Expiration
+                pnl_expiration = np.zeros_like(spot_range) - (total_price * 100)
+                for leg in trade['Legs']:
+                    if leg['type'] == "call":
+                        payoff = np.maximum(0, spot_range - leg['strike']) * 100
+                    else:
+                        payoff = np.maximum(0, leg['strike'] - spot_range) * 100
+                    
+                    if leg['side'] == "BUY": pnl_expiration += payoff
+                    else: pnl_expiration -= payoff
+
+                # 2. Calculate P&L Simulated (T+n)
                 pnl_simulated = np.zeros_like(spot_range) - (total_price * 100)
-                total_days = (datetime.strptime(expiry, "%Y-%m-%d") - datetime.now()).days
-                sim_T = max(0.001, (total_days - days_forward) / 365.0)
+                sim_T = max(0.001, (dte - days_forward) / 365.0) # Time remaining
                 
                 for leg in trade['Legs']:
                     sim_sigma = (leg['impliedVolatility'] * (1 + vol_adjust/100))
@@ -274,13 +300,40 @@ def page_terminal():
                     if leg['side'] == "BUY": pnl_simulated += (new_price * 100)
                     else: pnl_simulated -= (new_price * 100)
 
+                # 3. CALCULATE PROBABILITY & EV (NEW)
+                # We use the current price PDF (Bell Curve) to weigh the outcomes
+                sigma_now = trade['Legs'][0]['impliedVolatility']
+                T_full = dte / 365.0
+                
+                # Probability Density Function at Expiry
+                pdf = norm.pdf(np.log(spot_range / current_price), loc=(0.045 - 0.5 * sigma_now**2) * T_full, scale=sigma_now * np.sqrt(T_full))
+                pdf = pdf / pdf.sum() # Normalize so sum is 100%
+                
+                expected_value = np.sum(pnl_expiration * pdf)
+                prob_profit = np.sum(pdf[pnl_expiration > 0]) * 100
+                
+                # DISPLAY METRICS
+                m1, m2, m3 = st.columns(3)
+                m1.metric("Win Probability (PoP)", f"{prob_profit:.1f}%")
+                
+                ev_color = "normal" if expected_value > 0 else "inverse"
+                m2.metric("Expected Value (EV)", f"${expected_value:.2f}", "Avg return per trade", delta_color=ev_color)
+                
+                max_loss = np.min(pnl_expiration)
+                max_win = np.max(pnl_expiration)
+                m3.metric("Max Risk / Reward", f"${max_loss:.0f} / ${max_win:.0f}")
+
+                # CHART
                 fig = go.Figure()
+                fig.add_trace(go.Scatter(x=spot_range, y=pnl_expiration, mode='lines', 
+                                         name='Expiration P&L', line=dict(color='white', dash='dot')))
                 fig.add_trace(go.Scatter(x=spot_range, y=pnl_simulated, mode='lines', 
-                                         name='Simulated P&L', fill='tozeroy', 
-                                         line=dict(color='#00FF00' if pnl_simulated.max() > 0 else '#FF4B4B')))
-                fig.add_hline(y=0, line_color="gray", line_dash="dash")
-                fig.add_vline(x=current_price, line_color="yellow")
-                fig.update_layout(template="plotly_dark", height=400, title="Projected Outcome", yaxis_title="P/L ($)")
+                                         name=f'Simulated (T+{days_forward})', fill='tozeroy', 
+                                         line=dict(color='#00FF00' if expected_value > 0 else '#FF4B4B')))
+                
+                fig.add_hline(y=0, line_color="gray", line_width=1)
+                fig.add_vline(x=current_price, line_color="yellow", annotation_text="Spot")
+                fig.update_layout(template="plotly_dark", height=500, title="Probability-Weighted Outcome", yaxis_title="P/L ($)")
                 st.plotly_chart(fig, use_container_width=True)
 
     except Exception as e:
