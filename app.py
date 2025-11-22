@@ -123,32 +123,43 @@ def page_academy():
 #                 PAGE 3: THE TERMINAL (PRO)
 # ==================================================
 def page_terminal():
-    # --- QUANT ENGINE ---
-    class QuantEngine:
-        def __init__(self, risk_free_rate=0.045):
-            self.r = risk_free_rate
-        def black_scholes_call(self, S, K, T, sigma):
-            if T <= 0.001: return max(0, S - K)
-            d1 = (np.log(S / K) + (self.r + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
-            d2 = d1 - sigma * np.sqrt(T)
-            return S * norm.cdf(d1) - K * np.exp(-self.r * T) * norm.cdf(d2)
-        def black_scholes_put(self, S, K, T, sigma):
-            if T <= 0.001: return max(0, K - S)
-            d1 = (np.log(S / K) + (self.r + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
-            d2 = d1 - sigma * np.sqrt(T)
-            return K * np.exp(-self.r * T) * norm.cdf(-d2) - S * norm.cdf(-d1)
+   # ==================================================
+#           THE QUANT ENGINE (MATH CORE)
+# ==================================================
+class QuantEngine:
+    def __init__(self, risk_free_rate=0.045):
+        self.r = risk_free_rate
+
+    def black_scholes_call(self, S, K, T, sigma):
+        # Use np.maximum for vector safety
+        if T <= 0.001: return np.maximum(0.0, S - K)
         
-        def get_delta(self, S, K, T, sigma, type="call"):
-            if T <= 0.001: return 0
-            d1 = (np.log(S / K) + (self.r + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
-            if type == "call": return norm.cdf(d1)
-            else: return norm.cdf(d1) - 1
+        d1 = (np.log(S / K) + (self.r + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
+        d2 = d1 - sigma * np.sqrt(T)
+        return S * norm.cdf(d1) - K * np.exp(-self.r * T) * norm.cdf(d2)
 
-        def find_closest_strike(self, df, target_delta):
-            df['delta_diff'] = abs(df['calc_delta'] - target_delta)
-            return df.loc[df['delta_diff'].idxmin()]
+    def black_scholes_put(self, S, K, T, sigma):
+        # Use np.maximum for vector safety
+        if T <= 0.001: return np.maximum(0.0, K - S)
+        
+        d1 = (np.log(S / K) + (self.r + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
+        d2 = d1 - sigma * np.sqrt(T)
+        return K * np.exp(-self.r * T) * norm.cdf(-d2) - S * norm.cdf(-d1)
+    
+    def get_delta(self, S, K, T, sigma, type="call"):
+        if T <= 0.001: return 0.0
+        
+        d1 = (np.log(S / K) + (self.r + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
+        if type == "call": return norm.cdf(d1)
+        else: return norm.cdf(d1) - 1
 
-    quant = QuantEngine()
+    def find_closest_strike(self, df, target_delta):
+        # Helper to find specific delta strikes
+        df['delta_diff'] = abs(df['calc_delta'] - target_delta)
+        return df.loc[df['delta_diff'].idxmin()]
+
+# Initialize Engine
+quant = QuantEngine()
 
     def get_chain(ticker, expiry):
         stock = yf.Ticker(ticker)
