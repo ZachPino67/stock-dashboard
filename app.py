@@ -3,325 +3,309 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 from scipy.stats import norm
-from datetime import datetime, timedelta
+from datetime import datetime
 import plotly.graph_objects as go
+import time
 
 # --- PAGE CONFIG ---
-st.set_page_config(page_title="OpStruct Prime", page_icon="📐", layout="wide")
+st.set_page_config(page_title="OpStruct Pro", page_icon="📐", layout="wide")
 
-# --- SESSION STATE MANAGEMENT ---
-if 'page' not in st.session_state:
-    st.session_state.page = 'home'
+# --- SESSION STATE ---
+if 'page' not in st.session_state: st.session_state.page = 'home'
 
-def go_to_app():
-    st.session_state.page = 'app'
-
-def go_to_home():
-    st.session_state.page = 'home'
-
-# --- CUSTOM CSS (APPLE MEETS BLOOMBERG) ---
+# --- CSS STYLING ---
 st.markdown("""
 <style>
-    /* GENERAL */
     .stApp {background-color: #000000; color: #e0e0e0;}
+    h1, h2, h3 {font-family: 'SF Pro Display', sans-serif;}
     
-    /* TYPOGRAPHY */
-    h1, h2, h3 {font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;}
-    
-    /* HERO TEXT GRADIENT */
+    /* MARKETING HOME */
     .hero-text {
         background: -webkit-linear-gradient(45deg, #00FF00, #00AAFF);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        font-size: 4rem;
-        font-weight: 800;
-        text-align: center;
-        line-height: 1.1;
-        margin-bottom: 20px;
+        -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        font-size: 4rem; font-weight: 800; text-align: center; margin-bottom: 20px;
     }
     
-    .sub-hero {
-        font-size: 1.5rem;
-        color: #888;
-        text-align: center;
-        font-weight: 300;
-        max-width: 800px;
-        margin: 0 auto 40px auto;
+    /* TERMINAL UI */
+    .metric-card {
+        background: #111; border: 1px solid #333; padding: 15px; 
+        border-radius: 8px; text-align: center;
     }
-    
-    /* FEATURE CARDS */
-    .feature-card {
-        background: rgba(255, 255, 255, 0.05);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        border-radius: 16px;
-        padding: 30px;
-        text-align: left;
-        transition: transform 0.3s ease;
-        height: 100%;
+    .trade-ticket {
+        background: #0d1117; border-left: 5px solid #00FF00; padding: 20px;
+        margin-top: 20px; font-family: 'Courier New';
     }
-    .feature-card:hover {
-        transform: translateY(-5px);
-        border-color: #00FF00;
+    .greek-box {
+        font-size: 0.8rem; color: #aaa; background: #222; 
+        padding: 5px 10px; border-radius: 4px; display: inline-block; margin: 2px;
     }
-    .card-icon {font-size: 2rem; margin-bottom: 15px;}
-    .card-title {font-size: 1.2rem; font-weight: bold; color: white; margin-bottom: 10px;}
-    .card-desc {font-size: 0.9rem; color: #aaa; line-height: 1.5;}
-
-    /* BUTTONS */
-    div.stButton > button {
-        border-radius: 30px;
-        padding: 10px 30px;
-        font-weight: bold;
-        border: none;
-        transition: all 0.3s;
-    }
-    /* Primary CTA Button Styling specific hack */
-    div[data-testid="stVerticalBlock"] > div > div > div > div > .stButton > button {
-        background: linear-gradient(90deg, #00FF00, #008800);
-        color: black;
-        box-shadow: 0 0 20px rgba(0, 255, 0, 0.4);
-    }
-    
 </style>
 """, unsafe_allow_html=True)
 
 # ==================================================
-#                 THE HOMEPAGE (MARKETING)
+#           THE QUANT ENGINE (MATH CORE)
+# ==================================================
+class QuantEngine:
+    def __init__(self, risk_free_rate=0.045):
+        self.r = risk_free_rate
+
+    def black_scholes_call(self, S, K, T, sigma):
+        # S: Spot, K: Strike, T: Time(years), sigma: IV
+        if T <= 0: return max(0, S - K)
+        d1 = (np.log(S / K) + (self.r + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
+        d2 = d1 - sigma * np.sqrt(T)
+        delta = norm.cdf(d1)
+        return delta
+
+    def black_scholes_put(self, S, K, T, sigma):
+        if T <= 0: return max(0, K - S)
+        d1 = (np.log(S / K) + (self.r + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
+        d2 = d1 - sigma * np.sqrt(T)
+        delta = norm.cdf(d1) - 1
+        return delta
+
+    def find_closest_strike(self, df, target_delta, option_type="call"):
+        # Scans the chain to find the strike with Delta closest to Target
+        # This is how pros trade ("Sell the 30 Delta")
+        df['delta_diff'] = abs(df['calc_delta'] - target_delta)
+        return df.loc[df['delta_diff'].idxmin()]
+
+# Initialize Engine
+quant = QuantEngine()
+
+# ==================================================
+#                 HELPER FUNCTIONS
+# ==================================================
+@st.cache_data(ttl=300)
+def get_chain(ticker, expiry):
+    stock = yf.Ticker(ticker)
+    opt = stock.option_chain(expiry)
+    return stock, opt.calls, opt.puts
+
+def calculate_greeks(df, spot, expiry_date, type="call"):
+    # Adds 'calc_delta' column to the dataframe using Black-Scholes
+    T = (datetime.strptime(expiry_date, "%Y-%m-%d") - datetime.now()).days / 365.0
+    if T < 0.001: T = 0.001 # Prevent divide by zero
+    
+    deltas = []
+    for index, row in df.iterrows():
+        iv = row['impliedVolatility']
+        strike = row['strike']
+        
+        # Yahoo IV is sometimes 0 or junk, filter it
+        if iv < 0.01: iv = 0.5 
+        
+        if type == "call":
+            d = quant.black_scholes_call(spot, strike, T, iv)
+        else:
+            d = quant.black_scholes_put(spot, strike, T, iv)
+        deltas.append(d)
+        
+    df['calc_delta'] = deltas
+    return df
+
+# ==================================================
+#                 HOMEPAGE
 # ==================================================
 def homepage():
-    # -- HERO SECTION --
     st.markdown("<br><br>", unsafe_allow_html=True)
-    st.markdown('<div class="hero-text">Stop Gambling.<br>Start Structuring.</div>', unsafe_allow_html=True)
-    st.markdown('<div class="sub-hero">Most traders guess directions and lose. Professionals structure risk using math. OpStruct AI brings institutional-grade derivatives engineering to your browser.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="hero-text">OpStruct Pro.<br>Trade Deltas, Not Guesses.</div>', unsafe_allow_html=True)
+    st.markdown("<p style='text-align: center; color: #888;'>The first free terminal that runs a <b>Black-Scholes Engine</b> in your browser.<br>Calculates Greeks real-time. Structures Delta-Neutral strategies automatically.</p>", unsafe_allow_html=True)
     
-    # -- CTA --
     c1, c2, c3 = st.columns([1, 1, 1])
     with c2:
-        if st.button("🚀 LAUNCH TERMINAL", use_container_width=True):
-            go_to_app()
+        if st.button("🚀 INITIALIZE QUANT TERMINAL", use_container_width=True):
+            st.session_state.page = 'app'
             st.rerun()
 
-    st.markdown("<br><br><hr style='border-color: #333;'><br>", unsafe_allow_html=True)
-
-    # -- VALUE PROPOSITION GRID --
-    st.markdown("<h2 style='text-align: center; margin-bottom: 40px;'>Why OpStruct is Different</h2>", unsafe_allow_html=True)
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.markdown("""
-        <div class="feature-card">
-            <div class="card-icon">📐</div>
-            <div class="card-title">Algorithmic Structuring</div>
-            <div class="card-desc">
-                We don't just buy calls. We build <b>Vertical Spreads</b> and <b>Iron Condors</b> to cap your risk and lower your cost basis automatically.
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-        
-    with col2:
-        st.markdown("""
-        <div class="feature-card">
-            <div class="card-icon">📊</div>
-            <div class="card-title">Black-Scholes Native</div>
-            <div class="card-desc">
-                Every trade is backed by real-time probability math. We calculate the <b>Greeks</b> (Delta, Theta) so you know your exact edge before you trade.
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-        
-    with col3:
-        st.markdown("""
-        <div class="feature-card">
-            <div class="card-icon">🛡️</div>
-            <div class="card-title">Volatility Protection</div>
-            <div class="card-desc">
-                Amateurs get crushed by IV Crush. OpStruct scans Implied Volatility to ensure you aren't overpaying for premium.
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    st.markdown("<br><br>", unsafe_allow_html=True)
-    
-    # -- COMPARISON TABLE --
-    st.markdown("<h3 style='text-align: center;'>The Retail Trap vs. The OpStruct Way</h3>", unsafe_allow_html=True)
-    
-    comp_data = {
-        "Feature": ["Strategy", "Risk Profile", "Math", "Outcome"],
-        "Robinhood / Retail": ["Buy Naked Options", "Unlimited Loss", "Gut Feeling", "Account Blowup"],
-        "OpStruct Prime": ["Multi-Leg Spreads", "Defined Risk", "Probabilistic Model", "Consistent Alpha"]
-    }
-    st.table(pd.DataFrame(comp_data).set_index("Feature"))
-
 # ==================================================
-#                 THE APP (LOGIC ENGINE)
+#                 TERMINAL APP
 # ==================================================
 def main_app():
-    # --- BLACK-SCHOLES & MATH MODULES ---
-    def calculate_probability_of_profit(current_price, strike_price, days_to_exp, iv):
-        if days_to_exp <= 0: return 0
-        sigma = iv * np.sqrt(days_to_exp / 365)
-        d2 = (np.log(current_price / strike_price) - (0.5 * sigma ** 2)) / sigma
-        prob_itm = norm.cdf(d2)
-        return prob_itm
-
-    def get_option_chain_data(ticker):
-        stock = yf.Ticker(ticker)
-        try:
-            exps = stock.options
-            return stock, exps
-        except:
-            return None, []
-
-    # --- HEADER ---
-    c1, c2 = st.columns([3, 1])
-    with c1:
-        st.title("📐 OpStruct Terminal")
-    with c2:
-        if st.button("🏠 Back to Home"):
-            go_to_home()
-            st.rerun()
-
-    # --- SIDEBAR ---
-    st.sidebar.markdown("### ⚙️ Configuration")
+    # --- SIDEBAR CONFIG ---
+    st.sidebar.markdown("## ⚙️ Quant Settings")
     ticker = st.sidebar.text_input("Ticker", "NVDA").upper()
     
-    stock, exps = get_option_chain_data(ticker)
-    if not exps:
+    # 1. Fetch Expiries
+    stock = yf.Ticker(ticker)
+    try:
+        exps = stock.options
+    except:
         st.error("Invalid Ticker")
         return
-
-    expiry = st.sidebar.selectbox("Target Expiry", exps[:6])
-    view = st.sidebar.radio("Your Thesis", ["Bullish (Go Up)", "Bearish (Go Down)", "Neutral (Stay Flat)"])
-
-    # --- DATA FETCHING ---
-    hist = stock.history(period="1mo")
+        
+    expiry = st.sidebar.selectbox("Expiration Cycle", exps[:8])
+    
+    # 2. Strategy Selection
+    st.sidebar.markdown("### ♟️ Strategy")
+    strategy_mode = st.sidebar.selectbox("Trade Type", [
+        "Bull Call Spread (Debit)", 
+        "Bear Put Spread (Debit)", 
+        "Iron Condor (Income)",
+        "Delta Neutral Hedge" 
+    ])
+    
+    # --- HEADER DATA ---
+    hist = stock.history(period="5d")
     current_price = hist['Close'].iloc[-1]
-    iv_rank = (hist['Close'].pct_change().std() * np.sqrt(252) * 100)
-
-    # --- METRICS ---
-    m1, m2, m3 = st.columns(3)
-    m1.metric("Spot Price", f"${current_price:.2f}")
-    m2.metric("Implied Volatility", f"{iv_rank:.1f}%")
     
-    days_to_exp = (datetime.strptime(expiry, "%Y-%m-%d") - datetime.now()).days
-    m3.metric("Days to Expiry", days_to_exp)
-    
+    c1, c2, c3 = st.columns([1, 10, 1])
+    with c2:
+        st.markdown(f"### 🦅 {ticker} Quant Dashboard")
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Spot Price", f"${current_price:.2f}")
+        m2.metric("Expiry", expiry)
+        
+        # Calculate DTE
+        dte = (datetime.strptime(expiry, "%Y-%m-%d") - datetime.now()).days
+        m3.metric("DTE", f"{dte} Days")
+        
     st.divider()
 
-    # --- LOGIC CORE ---
-    opt = stock.option_chain(expiry)
-    calls = opt.calls
-    puts = opt.puts
-    trade_structure = {}
-
-    try:
-        if view == "Bullish (Go Up)":
-            buy_strike = calls.iloc[(calls['strike'] - current_price).abs().argsort()[:1]]['strike'].values[0]
-            sell_strike = calls[calls['strike'] > buy_strike].iloc[0]['strike']
-            buy_cost = calls[calls['strike'] == buy_strike]['lastPrice'].values[0]
-            sell_credit = calls[calls['strike'] == sell_strike]['lastPrice'].values[0]
-            net_debit = buy_cost - sell_credit
+    # --- EXECUTION ENGINE ---
+    with st.spinner("🧮 Running Black-Scholes Model..."):
+        try:
+            _, calls, puts = get_chain(ticker, expiry)
             
-            trade_structure = {
-                "Name": "Bull Call Spread",
-                "Leg 1": f"BUY ${buy_strike} CALL",
-                "Leg 2": f"SELL ${sell_strike} CALL",
-                "Cost": net_debit * 100,
-                "Max Profit": ((sell_strike - buy_strike) - net_debit) * 100,
-                "Breakeven": buy_strike + net_debit,
-                "Thesis": "Capped upside, but significantly cheaper than a raw call."
-            }
-
-        elif view == "Bearish (Go Down)":
-            buy_strike = puts.iloc[(puts['strike'] - current_price).abs().argsort()[:1]]['strike'].values[0]
-            sell_strike = puts[puts['strike'] < buy_strike].iloc[-1]['strike'] 
-            buy_cost = puts[puts['strike'] == buy_strike]['lastPrice'].values[0]
-            sell_credit = puts[puts['strike'] == sell_strike]['lastPrice'].values[0]
-            net_debit = buy_cost - sell_credit
+            # CALCULATE LIVE GREEKS (The "Advanced" Part)
+            calls = calculate_greeks(calls, current_price, expiry, "call")
+            puts = calculate_greeks(puts, current_price, expiry, "put")
             
-            trade_structure = {
-                "Name": "Bear Put Spread",
-                "Leg 1": f"BUY ${buy_strike} PUT",
-                "Leg 2": f"SELL ${sell_strike} PUT",
-                "Cost": net_debit * 100,
-                "Max Profit": ((buy_strike - sell_strike) - net_debit) * 100,
-                "Breakeven": buy_strike - net_debit,
-                "Thesis": "Profit from downside while protecting against volatility crush."
-            }
-
-        elif view == "Neutral (Stay Flat)":
-            upper_strike = calls[calls['strike'] > current_price * 1.05].iloc[0]['strike']
-            lower_strike = puts[puts['strike'] < current_price * 0.95].iloc[-1]['strike']
-            call_credit = calls[calls['strike'] == upper_strike]['lastPrice'].values[0]
-            put_credit = puts[puts['strike'] == lower_strike]['lastPrice'].values[0]
-            total_credit = call_credit + put_credit
+            trade = {}
             
-            trade_structure = {
-                "Name": "Iron Condor / Strangle",
-                "Leg 1": f"SELL ${upper_strike} CALL",
-                "Leg 2": f"SELL ${lower_strike} PUT",
-                "Cost": f"+${total_credit * 100:.2f} (Credit)",
-                "Max Profit": total_credit * 100,
-                "Breakeven": f"${lower_strike - total_credit:.2f} / ${upper_strike + total_credit:.2f}",
-                "Thesis": "Income generation. Profits if stock stays between strikes."
-            }
+            # --- STRATEGY LOGIC: DELTA BASED ---
+            
+            if strategy_mode == "Bull Call Spread (Debit)":
+                # PRO LOGIC: Buy 50 Delta (ATM), Sell 30 Delta (OTM)
+                buy_leg = quant.find_closest_strike(calls, 0.50)
+                sell_leg = quant.find_closest_strike(calls, 0.30)
+                
+                cost = buy_leg['lastPrice'] - sell_leg['lastPrice']
+                trade = {
+                    "Name": "Delta-50/30 Call Spread",
+                    "Legs": [
+                        {"side": "BUY", "strike": buy_leg['strike'], "delta": f"{buy_leg['calc_delta']:.2f}", "price": buy_leg['lastPrice']},
+                        {"side": "SELL", "strike": sell_leg['strike'], "delta": f"{sell_leg['calc_delta']:.2f}", "price": sell_leg['lastPrice']}
+                    ],
+                    "Net": cost,
+                    "Max_Profit": (sell_leg['strike'] - buy_leg['strike']) - cost,
+                    "Bias": "Bullish",
+                    "Note": "Optimized for directional move with reduced Theta decay."
+                }
+                
+            elif strategy_mode == "Bear Put Spread (Debit)":
+                # PRO LOGIC: Buy -50 Delta, Sell -30 Delta
+                buy_leg = quant.find_closest_strike(puts, -0.50, "put")
+                sell_leg = quant.find_closest_strike(puts, -0.30, "put")
+                
+                cost = buy_leg['lastPrice'] - sell_leg['lastPrice']
+                trade = {
+                    "Name": "Delta-50/30 Put Spread",
+                    "Legs": [
+                        {"side": "BUY", "strike": buy_leg['strike'], "delta": f"{buy_leg['calc_delta']:.2f}", "price": buy_leg['lastPrice']},
+                        {"side": "SELL", "strike": sell_leg['strike'], "delta": f"{sell_leg['calc_delta']:.2f}", "price": sell_leg['lastPrice']}
+                    ],
+                    "Net": cost,
+                    "Max_Profit": (buy_leg['strike'] - sell_leg['strike']) - cost,
+                    "Bias": "Bearish",
+                    "Note": "Hedges downside risk while capping cost."
+                }
 
-        # --- OUTPUT DISPLAY ---
-        c1, c2 = st.columns([1, 1])
-        
-        with c1:
-            st.subheader("🧬 Generated Structure")
-            st.markdown(f"""
-            <div style="background: #111; padding: 20px; border-radius: 10px; border: 1px solid #333;">
-                <h3 style="color: #00FF00;">{trade_structure['Name']}</h3>
-                <p>🟢 {trade_structure['Leg 1']}</p>
-                <p>🔴 {trade_structure['Leg 2']}</p>
-                <hr style="border-color: #444;">
-                <div style="display: flex; justify-content: space-between;">
-                    <div><b>Cost:</b><br>{trade_structure['Cost'] if isinstance(trade_structure['Cost'], str) else f"${trade_structure['Cost']:.2f}"}</div>
-                    <div><b>Max Profit:</b><br><span style="color: #00FF00;">${trade_structure['Max Profit']:.2f}</span></div>
+            elif strategy_mode == "Iron Condor (Income)":
+                # PRO LOGIC: Sell 20 Delta Call / Sell 20 Delta Put (High Probability)
+                short_call = quant.find_closest_strike(calls, 0.20)
+                long_call = quant.find_closest_strike(calls, 0.10) # Protection
+                short_put = quant.find_closest_strike(puts, -0.20, "put")
+                long_put = quant.find_closest_strike(puts, -0.10, "put")
+                
+                credit = (short_call['lastPrice'] - long_call['lastPrice']) + (short_put['lastPrice'] - long_put['lastPrice'])
+                width = long_call['strike'] - short_call['strike']
+                
+                trade = {
+                    "Name": "Delta-20 Iron Condor",
+                    "Legs": [
+                        {"side": "SELL", "strike": short_call['strike'], "delta": f"{short_call['calc_delta']:.2f}", "price": short_call['lastPrice']},
+                        {"side": "BUY", "strike": long_call['strike'], "delta": f"{long_call['calc_delta']:.2f}", "price": long_call['lastPrice']},
+                        {"side": "SELL", "strike": short_put['strike'], "delta": f"{short_put['calc_delta']:.2f}", "price": short_put['lastPrice']},
+                        {"side": "BUY", "strike": long_put['strike'], "delta": f"{long_put['calc_delta']:.2f}", "price": long_put['lastPrice']},
+                    ],
+                    "Net": credit,
+                    "Max_Profit": credit,
+                    "Bias": "Neutral",
+                    "Note": "High Probability Income Trade. Profits if price stays stable."
+                }
+
+            # --- DISPLAY TICKET ---
+            c1, c2 = st.columns([1, 1])
+            
+            with c1:
+                st.subheader("🎫 Algorithm Structure")
+                st.markdown(f"""
+                <div class="trade-ticket">
+                    <h3>{trade['Name']}</h3>
+                    <p style='color: #888;'>Bias: {trade['Bias']}</p>
+                    <hr style='border-color: #333;'>
+                """, unsafe_allow_html=True)
+                
+                for leg in trade['Legs']:
+                    color = "#00FF00" if leg['side'] == "BUY" else "#FF4B4B"
+                    st.markdown(f"""
+                    <div style='display: flex; justify-content: space-between; margin-bottom: 5px;'>
+                        <span style='color: {color}; font-weight: bold;'>{leg['side']} ${leg['strike']}</span>
+                        <span>Price: ${leg['price']:.2f}</span>
+                        <span class='greek-box'>Δ {leg['delta']}</span>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                st.markdown(f"""
+                    <hr style='border-color: #333;'>
+                    <div style='display: flex; justify-content: space-between; font-size: 1.2em;'>
+                        <span>EST. COST:</span>
+                        <span style='color: white;'>${trade['Net']*100:.2f}</span>
+                    </div>
+                    <div style='display: flex; justify-content: space-between; font-size: 1.2em;'>
+                        <span>MAX PROFIT:</span>
+                        <span style='color: #00FF00;'>${trade['Max_Profit']*100:.2f}</span>
+                    </div>
                 </div>
-            </div>
-            """, unsafe_allow_html=True)
-            
-        with c2:
-            st.subheader("📉 Payoff Diagram")
-            spot_range = np.linspace(current_price * 0.8, current_price * 1.2, 100)
-            
-            # Simple plotting logic
-            if "Call Spread" in trade_structure['Name']:
-                b_strike = float(trade_structure['Leg 1'].split('$')[1].split(' ')[0])
-                s_strike = float(trade_structure['Leg 2'].split('$')[1].split(' ')[0])
-                debit = float(trade_structure['Cost']) / 100
-                payoff = np.where(spot_range > b_strike, spot_range - b_strike, 0) - \
-                         np.where(spot_range > s_strike, spot_range - s_strike, 0) - debit
-            elif "Put Spread" in trade_structure['Name']:
-                b_strike = float(trade_structure['Leg 1'].split('$')[1].split(' ')[0])
-                s_strike = float(trade_structure['Leg 2'].split('$')[1].split(' ')[0])
-                debit = float(trade_structure['Cost']) / 100
-                payoff = np.where(spot_range < b_strike, b_strike - spot_range, 0) - \
-                         np.where(spot_range < s_strike, s_strike - spot_range, 0) - debit
-            else:
-                u_strike = float(trade_structure['Leg 1'].split('$')[1].split(' ')[0])
-                l_strike = float(trade_structure['Leg 2'].split('$')[1].split(' ')[0])
-                credit = float(trade_structure['Cost'].split('$')[1].split(' ')[0]) / 100
-                payoff = credit - np.where(spot_range > u_strike, spot_range - u_strike, 0) - \
-                         np.where(spot_range < l_strike, l_strike - spot_range, 0)
+                """, unsafe_allow_html=True)
+                
+                st.info(f"👨‍💻 **Quant Note:** {trade['Note']}")
 
-            fig = go.Figure()
-            fig.add_trace(go.Scatter(x=spot_range, y=payoff, mode='lines', fill='tozeroy', line=dict(color='#00FF00')))
-            fig.add_hline(y=0, line_color="white", line_dash="dash")
-            fig.add_vline(x=current_price, line_color="yellow")
-            fig.update_layout(template="plotly_dark", height=300, margin=dict(l=0,r=0,t=0,b=0), yaxis_title="P/L")
-            st.plotly_chart(fig, use_container_width=True)
+            with c2:
+                # P&L CHART
+                st.subheader("📉 Payoff Topology")
+                spot_range = np.linspace(current_price * 0.85, current_price * 1.15, 100)
+                
+                # Dynamic P&L Calculation based on Legs
+                pnl = np.zeros_like(spot_range) - (trade['Net'] * 100) # Start with debit/credit
+                if strategy_mode == "Iron Condor (Income)": pnl = np.zeros_like(spot_range) + (trade['Net'] * 100)
+                
+                for leg in trade['Legs']:
+                    if "CALL" in strategy_mode or "Iron" in strategy_mode and leg['strike'] > current_price:
+                        # Call Logic
+                        payoff = np.maximum(0, spot_range - leg['strike']) * 100
+                        if leg['side'] == "BUY": pnl += payoff
+                        else: pnl -= payoff
+                    else:
+                        # Put Logic
+                        payoff = np.maximum(0, leg['strike'] - spot_range) * 100
+                        if leg['side'] == "BUY": pnl += payoff
+                        else: pnl -= payoff
 
-    except Exception as e:
-        st.error(f"Structuring Error: {e}")
+                fig = go.Figure()
+                fig.add_trace(go.Scatter(x=spot_range, y=pnl, mode='lines', fill='tozeroy', 
+                                         line=dict(color='#00FF00' if pnl.max() > 0 else '#FF4B4B')))
+                fig.add_hline(y=0, line_color="white", line_dash="dash")
+                fig.add_vline(x=current_price, line_color="yellow", annotation_text="Spot")
+                fig.update_layout(template="plotly_dark", height=400, yaxis_title="Profit ($)", xaxis_title="Stock Price")
+                st.plotly_chart(fig, use_container_width=True)
 
-# ==================================================
-#                 CONTROLLER
-# ==================================================
+        except Exception as e:
+            st.error(f"Optimization Error: {e}")
+            st.caption("Common issue: Option chain illiquid or missing Delta data.")
+
+# --- NAVIGATION CONTROLLER ---
 if st.session_state.page == 'home':
     homepage()
 else:
