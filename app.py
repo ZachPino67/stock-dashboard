@@ -76,7 +76,8 @@ quant = QuantEngine()
 # ==================================================
 #                 HELPER FUNCTIONS
 # ==================================================
-@st.cache_data(ttl=300)
+
+# --- CRASH FIXED: REMOVED @st.cache_data HERE ---
 def get_chain(ticker, expiry):
     stock = yf.Ticker(ticker)
     opt = stock.option_chain(expiry)
@@ -144,6 +145,10 @@ def main_app():
         "Iron Condor (Income)",
         "Delta Neutral Hedge" 
     ])
+    
+    if st.sidebar.button("🏠 Home"):
+        st.session_state.page = 'home'
+        st.rerun()
     
     # --- HEADER DATA ---
     hist = stock.history(period="5d")
@@ -234,6 +239,23 @@ def main_app():
                     "Bias": "Neutral",
                     "Note": "High Probability Income Trade. Profits if price stays stable."
                 }
+            
+            elif strategy_mode == "Delta Neutral Hedge":
+                # PRO LOGIC: Buy 100 shares, Sell Calls to offset
+                atm_call = quant.find_closest_strike(calls, 0.50)
+                ratio = 1 / 0.50 # roughly 2 calls per 100 shares if Delta is 0.5
+                
+                trade = {
+                    "Name": "Delta Neutral Hedge",
+                    "Legs": [
+                        {"side": "BUY", "strike": "STOCK", "delta": "1.00", "price": current_price},
+                        {"side": "SELL", "strike": atm_call['strike'], "delta": f"{atm_call['calc_delta']:.2f}", "price": atm_call['lastPrice']}
+                    ],
+                    "Net": current_price - (atm_call['lastPrice'] * 2),
+                    "Max_Profit": 0, # N/A for hedge
+                    "Bias": "Hedge",
+                    "Note": f"Sell 2x ATM Calls to neutralize 100 shares."
+                }
 
             # --- DISPLAY TICKET ---
             c1, c2 = st.columns([1, 1])
@@ -251,21 +273,21 @@ def main_app():
                     color = "#00FF00" if leg['side'] == "BUY" else "#FF4B4B"
                     st.markdown(f"""
                     <div style='display: flex; justify-content: space-between; margin-bottom: 5px;'>
-                        <span style='color: {color}; font-weight: bold;'>{leg['side']} ${leg['strike']}</span>
+                        <span style='color: {color}; font-weight: bold;'>{leg['side']} {leg['strike']}</span>
                         <span>Price: ${leg['price']:.2f}</span>
                         <span class='greek-box'>Δ {leg['delta']}</span>
                     </div>
                     """, unsafe_allow_html=True)
                 
+                # Handle Cost Display for Hedge vs Spread
+                cost_label = "EST. COST:" if trade['Bias'] != "Neutral" else "EST. CREDIT:"
+                cost_val = trade['Net'] if trade['Bias'] != "Neutral" else trade['Net']
+                
                 st.markdown(f"""
                     <hr style='border-color: #333;'>
                     <div style='display: flex; justify-content: space-between; font-size: 1.2em;'>
-                        <span>EST. COST:</span>
-                        <span style='color: white;'>${trade['Net']*100:.2f}</span>
-                    </div>
-                    <div style='display: flex; justify-content: space-between; font-size: 1.2em;'>
-                        <span>MAX PROFIT:</span>
-                        <span style='color: #00FF00;'>${trade['Max_Profit']*100:.2f}</span>
+                        <span>{cost_label}</span>
+                        <span style='color: white;'>${abs(cost_val)*100:.2f}</span>
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
@@ -278,11 +300,14 @@ def main_app():
                 spot_range = np.linspace(current_price * 0.85, current_price * 1.15, 100)
                 
                 # Dynamic P&L Calculation based on Legs
-                pnl = np.zeros_like(spot_range) - (trade['Net'] * 100) # Start with debit/credit
-                if strategy_mode == "Iron Condor (Income)": pnl = np.zeros_like(spot_range) + (trade['Net'] * 100)
+                pnl = np.zeros_like(spot_range) - (trade['Net'] * 100) 
+                if trade['Bias'] == "Neutral": pnl = np.zeros_like(spot_range) + (trade['Net'] * 100)
                 
                 for leg in trade['Legs']:
-                    if "CALL" in strategy_mode or "Iron" in strategy_mode and leg['strike'] > current_price:
+                    if leg['strike'] == "STOCK":
+                        # Stock P&L
+                        pnl += (spot_range - leg['price']) * 100
+                    elif "CALL" in strategy_mode or "Iron" in strategy_mode and leg['strike'] > current_price:
                         # Call Logic
                         payoff = np.maximum(0, spot_range - leg['strike']) * 100
                         if leg['side'] == "BUY": pnl += payoff
@@ -303,7 +328,7 @@ def main_app():
 
         except Exception as e:
             st.error(f"Optimization Error: {e}")
-            st.caption("Common issue: Option chain illiquid or missing Delta data.")
+            st.caption("Common issue: Option chain illiquid or missing Delta data. Try a monthly expiration.")
 
 # --- NAVIGATION CONTROLLER ---
 if st.session_state.page == 'home':
