@@ -1,9 +1,7 @@
 streamlit
 yfinance
 pandas
-pandas_ta
-vaderSentiment
-feedparser
+numpy
+scipy
 plotly
 requests
-skipy
