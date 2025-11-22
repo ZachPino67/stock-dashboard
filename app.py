@@ -1,192 +1,273 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import pandas_ta as ta
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
+import numpy as np
+from datetime import datetime
+import time
 
 # --- PAGE CONFIG ---
-st.set_page_config(page_title="QUANT-X: Fusion Terminal", page_icon="🦅", layout="wide")
+st.set_page_config(page_title="TradeWizard", page_icon="🔮", layout="centered")
 
-# --- CUSTOM CSS ---
+# --- CUSTOM CSS (GAME DESIGN) ---
 st.markdown("""
 <style>
-    .stApp {background-color: #0e1117;}
-    div.stButton > button:first-child {background-color: #00FF00; color: black;}
+    /* Hide standard Streamlit UI junk */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+    
+    /* Game-like Typography */
+    h1 {color: #FF4B4B; font-family: 'Helvetica', sans-serif; font-weight: 800; font-size: 3rem;}
+    p {font-size: 1.2rem; font-family: 'Arial', sans-serif;}
+    
+    /* Big Button Styling */
+    div.stButton > button:first-child {
+        height: 3em;
+        width: 100%;
+        border-radius: 20px;
+        border: 2px solid #f0f2f6;
+        font-size: 20px;
+        font-weight: bold;
+        box-shadow: 0px 4px 6px rgba(0,0,0,0.1);
+        transition: all 0.2s;
+    }
+    div.stButton > button:hover {
+        transform: scale(1.02);
+        border-color: #FF4B4B;
+    }
+    
+    /* Card Styling */
+    .game-card {
+        background-color: #ffffff;
+        padding: 20px;
+        border-radius: 15px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+        margin-bottom: 20px;
+        border: 1px solid #e0e0e0;
+        text-align: center;
+    }
+    
+    /* Feedback Boxes */
+    .feedback-good {background-color: #d4edda; color: #155724; padding: 15px; border-radius: 10px; border: 1px solid #c3e6cb;}
+    .feedback-bad {background-color: #f8d7da; color: #721c24; padding: 15px; border-radius: 10px; border: 1px solid #f5c6cb;}
+    .feedback-warn {background-color: #fff3cd; color: #856404; padding: 15px; border-radius: 10px; border: 1px solid #ffeeba;}
+    
 </style>
 """, unsafe_allow_html=True)
 
-# --- INTELLIGENCE DATABASE ---
-RELATIONSHIPS = {
-    'NVDA': [
-        {'ticker': 'TSM', 'name': 'Taiwan Semi', 'role': 'Supplier (Foundry)', 'why': 'Manufactures 100% of Nvidia chips.'},
-        {'ticker': 'SMCI', 'name': 'Super Micro', 'role': 'Customer/Partner', 'why': 'Builds the servers NVDA chips go into.'},
-        {'ticker': 'VRT', 'name': 'Vertiv', 'role': 'Infrastructure', 'why': 'Cooling systems for AI Data Centers.'},
-        {'ticker': 'AMD', 'name': 'AMD', 'role': 'Rival', 'why': 'Direct competitor in GPU market.'}
-    ],
-    'AAPL': [
-        {'ticker': 'SWKS', 'name': 'Skyworks', 'role': 'Supplier (Radio)', 'why': 'Makes 5G/Antenna chips for iPhone.'},
-        {'ticker': 'QCOM', 'name': 'Qualcomm', 'role': 'Supplier (Modem)', 'why': 'Provides 5G modems (Critical).'},
-        {'ticker': 'CRUS', 'name': 'Cirrus Logic', 'role': 'Supplier (Audio)', 'why': 'Audio chips (80% rev comes from Apple).'},
-        {'ticker': 'GLW', 'name': 'Corning', 'role': 'Supplier (Glass)', 'why': 'Makes the "Gorilla Glass" screens.'}
-    ],
-    'TSLA': [
-        {'ticker': 'ALB', 'name': 'Albemarle', 'role': 'Supplier (Raw)', 'why': 'World largest Lithium miner (Batteries).'},
-        {'ticker': 'RIVN', 'name': 'Rivian', 'role': 'Rival', 'why': 'High-end EV Truck competitor.'},
-        {'ticker': 'BYDDF', 'name': 'BYD', 'role': 'Rival (Global)', 'why': 'Biggest EV rival in China.'}
-    ],
-    'MSFT': [
-        {'ticker': 'CRWD', 'name': 'CrowdStrike', 'role': 'Partner/Risk', 'why': 'Deeply integrated into Windows Security.'},
-        {'ticker': 'ORCL', 'name': 'Oracle', 'role': 'Rival (Cloud)', 'why': 'Competes with Azure for AI hosting.'},
-        {'ticker': 'ADBE', 'name': 'Adobe', 'role': 'Partner (AI)', 'why': 'Integrating Copilot into Creative Cloud.'}
-    ],
-    'GOOGL': [
-        {'ticker': 'META', 'name': 'Meta', 'role': 'Rival (Ads)', 'why': 'Competes for Digital Ad spend.'},
-        {'ticker': 'TTD', 'name': 'Trade Desk', 'role': 'Rival (AdTech)', 'why': 'Open internet ad platform (Anti-Google).'},
-        {'ticker': 'SNAP', 'name': 'Snap', 'role': 'Rival (Social)', 'why': 'Competes for Gen-Z eyeballs.'}
-    ],
-    'AMZN': [
-        {'ticker': 'WMT', 'name': 'Walmart', 'role': 'Rival (Retail)', 'why': 'Biggest e-commerce competitor.'},
-        {'ticker': 'SHOP', 'name': 'Shopify', 'role': 'Rival (Platform)', 'why': 'Empowers anti-Amazon independent stores.'},
-        {'ticker': 'FDX', 'name': 'FedEx', 'role': 'Logistics', 'why': 'Shipping rival/partner ecosystem.'}
-    ],
-    'META': [
-        {'ticker': 'PINS', 'name': 'Pinterest', 'role': 'Rival (Social)', 'why': 'Alternative for visual ad spend.'},
-        {'ticker': 'RDDT', 'name': 'Reddit', 'role': 'Data Source', 'why': 'Data licensing for AI training.'}
-    ]
-}
+# --- SESSION STATE (MEMORY) ---
+if 'step' not in st.session_state: st.session_state.step = 0 # Start at Home
+if 'balance' not in st.session_state: st.session_state.balance = 10000.0
+if 'portfolio' not in st.session_state: st.session_state.portfolio = []
+if 'ticker' not in st.session_state: st.session_state.ticker = ""
+if 'direction' not in st.session_state: st.session_state.direction = ""
 
-# --- SIDEBAR ---
-st.sidebar.title("🦅 QUANT-X")
-tickers = list(RELATIONSHIPS.keys())
-selected_ticker = st.sidebar.selectbox("TARGET ASSET", tickers)
-timeframe = st.sidebar.selectbox("Timeframe", ["6mo", "1y", "2y"], index=1)
-
-# --- DATA ENGINE (DEEP DIVE) ---
+# --- COMPLEX BACKEND (HIDDEN) ---
 @st.cache_data(ttl=60)
-def get_quant_data(ticker, period):
-    stock = yf.Ticker(ticker)
-    df = stock.history(period=period)
-    
-    if df.empty: return pd.DataFrame()
-    
-    # 1. MACD
-    macd = df.ta.macd(close='Close', fast=12, slow=26, signal=9)
-    if macd is not None: df = pd.concat([df, macd], axis=1)
-    
-    # 2. BOLLINGER BANDS
-    bb = df.ta.bbands(close='Close', length=20, std=2)
-    if bb is not None: df = pd.concat([df, bb], axis=1)
-    
-    # 3. Z-SCORE
-    df['Z_Score'] = (df['Close'] - df['Close'].rolling(20).mean()) / df['Close'].rolling(20).std()
-    
-    # 4. RSI
-    df['RSI'] = df.ta.rsi(close='Close', length=14)
-    
-    return df
-
-# --- MAIN LAYOUT ---
-df = get_quant_data(selected_ticker, timeframe)
-curr_price = df['Close'].iloc[-1]
-rsi = df['RSI'].iloc[-1]
-z_score = df['Z_Score'].iloc[-1]
-
-# --- SECTION 1: HEADS UP DISPLAY ---
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("PRICE", f"${curr_price:.2f}")
-c2.metric("RSI", f"{rsi:.1f}", "Overbought" if rsi > 70 else "Oversold" if rsi < 30 else "Neutral")
-
-z_col = "normal"
-if z_score > 2: z_col = "inverse"
-c3.metric("Z-SCORE", f"{z_score:.2f}", "Sigma Dev", delta_color=z_col)
-
-signal = "WAIT"
-if rsi < 30 and z_score < -2: signal = "💎 STRONG BUY"
-elif rsi > 70 and z_score > 2: signal = "🔥 STRONG SELL"
-c4.metric("QUANT SIGNAL", signal)
-
-# --- SECTION 2: THE MASTER CHART (RESTORED) ---
-st.markdown("### 🔭 Technical Deep Dive")
-
-fig = make_subplots(rows=3, cols=1, shared_xaxes=True, 
-                    vertical_spacing=0.05, row_heights=[0.6, 0.2, 0.2])
-
-# Candles & BB
-fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'],
-                low=df['Low'], close=df['Close'], name="Price"), row=1, col=1)
-if 'BBU_20_2.0' in df.columns:
-    fig.add_trace(go.Scatter(x=df.index, y=df['BBU_20_2.0'], 
-                            line=dict(color='rgba(0, 255, 255, 0.3)', width=1), name="Upper BB"), row=1, col=1)
-    fig.add_trace(go.Scatter(x=df.index, y=df['BBL_20_2.0'], 
-                            line=dict(color='rgba(0, 255, 255, 0.3)', width=1), fill='tonexty', name="Lower BB"), row=1, col=1)
-
-# MACD
-if 'MACDh_12_26_9' in df.columns:
-    fig.add_trace(go.Bar(x=df.index, y=df['MACDh_12_26_9'], marker_color='cyan', name="MACD Hist"), row=2, col=1)
-    fig.add_trace(go.Scatter(x=df.index, y=df['MACD_12_26_9'], line=dict(color='white', width=1), name="MACD"), row=2, col=1)
-    fig.add_trace(go.Scatter(x=df.index, y=df['MACDs_12_26_9'], line=dict(color='orange', width=1), name="Signal"), row=2, col=1)
-
-# Z-Score
-fig.add_trace(go.Scatter(x=df.index, y=df['Z_Score'], line=dict(color='yellow', width=2), name="Z-Score"), row=3, col=1)
-fig.add_hline(y=2, line_dash="dot", line_color="red", row=3, col=1)
-fig.add_hline(y=-2, line_dash="dot", line_color="green", row=3, col=1)
-
-fig.update_layout(template="plotly_dark", xaxis_rangeslider_visible=False, height=700, margin=dict(l=0, r=0, t=0, b=0))
-st.plotly_chart(fig, use_container_width=True)
-
-st.divider()
-
-# --- SECTION 3: SUPPLY CHAIN INTELLIGENCE ---
-st.subheader(f"🧬 Supply Chain Intelligence: {selected_ticker}")
-
-relations = RELATIONSHIPS[selected_ticker]
-correlation_data = []
-chart_data = pd.DataFrame()
-chart_data[selected_ticker] = (df['Close'] / df['Close'].iloc[0] - 1) * 100
-
-for item in relations:
+def get_oracle_advice(ticker, direction):
+    # This is the Military-Grade Logic hidden behind the curtain
     try:
-        sym_df = yf.Ticker(item['ticker']).history(period=timeframe)
-        sym_df = sym_df['Close'].reindex(df.index, method='ffill')
+        stock = yf.Ticker(ticker)
+        hist = stock.history(period="1mo")
+        if hist.empty: return "ERROR", 0, 0
         
-        corr = df['Close'].corr(sym_df)
-        perf = (sym_df.iloc[-1] - sym_df.iloc[0]) / sym_df.iloc[0] * 100
+        price = hist['Close'].iloc[-1]
         
-        correlation_data.append({
-            "Ticker": item['ticker'],
-            "Company": item['name'],
-            "Role": item['role'],
-            "Connection": item['why'],
-            "Correlation": corr,
-            "Performance": perf
+        # 1. MAX PAIN CALCULATION (The Magnet)
+        try:
+            exps = stock.options
+            if exps:
+                opt = stock.option_chain(exps[0])
+                calls = opt.calls
+                puts = opt.puts
+                # Weighted Average Strike based on Open Interest
+                total_oi = calls['openInterest'].sum() + puts['openInterest'].sum()
+                if total_oi > 0:
+                    magnet = ((calls['strike'] * calls['openInterest']).sum() + 
+                              (puts['strike'] * puts['openInterest']).sum()) / total_oi
+                else:
+                    magnet = price
+            else:
+                magnet = price
+        except:
+            magnet = price
+
+        # 2. VOLATILITY CHECK (The Fear)
+        vol = hist['Close'].pct_change().std() * np.sqrt(252) * 100
+        
+        # 3. THE VERDICT
+        verdict = "GOOD"
+        reason = "Looks safe!"
+        
+        # Rule: Don't bet against the Magnet
+        if direction == "CALL" and magnet < price * 0.98:
+            verdict = "BAD"
+            reason = f"The 'Big Banks' want to pull {ticker} DOWN to ${magnet:.0f}."
+        elif direction == "PUT" and magnet > price * 1.02:
+            verdict = "BAD"
+            reason = f"The 'Big Banks' want to push {ticker} UP to ${magnet:.0f}."
+            
+        # Rule: Don't buy in extreme volatility (Options too expensive)
+        if vol > 60:
+            verdict = "WARNING"
+            reason = f"Panic is high ({vol:.0f}% volatility). Options are overpriced right now."
+            
+        return verdict, reason, price
+        
+    except:
+        return "ERROR", 0, 0
+
+# --- NAVIGATOR (PROGRESS BAR) ---
+def show_progress(percent):
+    st.progress(percent)
+
+# ==================================================
+#                 STEP 0: HOMEPAGE
+# ==================================================
+if st.session_state.step == 0:
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown("<h1 style='text-align: center;'>🔮 TradeWizard</h1>", unsafe_allow_html=True)
+    st.markdown(f"<div class='game-card'><h3>💰 Balance: ${st.session_state.balance:,.2f}</h3></div>", unsafe_allow_html=True)
+    
+    st.markdown("<p style='text-align: center;'>Practice trading without losing your shirt.<br>The <b>Oracle AI</b> will protect you from bad deals.</p>", unsafe_allow_html=True)
+    
+    c1, c2, c3 = st.columns([1, 2, 1])
+    with c2:
+        if st.button("🎮 START NEW TRADE"):
+            st.session_state.step = 1
+            st.rerun()
+            
+    # Show Portfolio if exists
+    if st.session_state.portfolio:
+        st.divider()
+        st.markdown("### 📜 Your History")
+        st.dataframe(pd.DataFrame(st.session_state.portfolio), use_container_width=True)
+
+# ==================================================
+#                 STEP 1: PICK STOCK
+# ==================================================
+elif st.session_state.step == 1:
+    show_progress(25)
+    st.markdown("### 🔎 Step 1: Which company?")
+    
+    # 1. SEARCH BAR (The "Expand Beyond 7" Feature)
+    user_input = st.text_input("Search ANY Stock Ticker (e.g. GME, AMC, COIN)", placeholder="Type here...").upper()
+    
+    if user_input:
+        # Verify it exists
+        if st.button(f"Select {user_input} ->"):
+            st.session_state.ticker = user_input
+            st.session_state.step = 2
+            st.rerun()
+    
+    st.markdown("--- OR PICK A POPULAR ONE ---")
+    
+    # 2. QUICK CHIPS (Gamified)
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        if st.button("🍎 AAPL"): 
+            st.session_state.ticker = "AAPL"
+            st.session_state.step = 2
+            st.rerun()
+    with c2:
+        if st.button("🚗 TSLA"):
+            st.session_state.ticker = "TSLA"
+            st.session_state.step = 2
+            st.rerun()
+    with c3:
+        if st.button("🤖 NVDA"):
+            st.session_state.ticker = "NVDA"
+            st.session_state.step = 2
+            st.rerun()
+
+    if st.button("⬅️ Back"):
+        st.session_state.step = 0
+        st.rerun()
+
+# ==================================================
+#                 STEP 2: UP OR DOWN?
+# ==================================================
+elif st.session_state.step == 2:
+    show_progress(50)
+    st.markdown(f"### 🔮 Step 2: Where is {st.session_state.ticker} going?")
+    
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("🚀 UP (Call)"):
+            st.session_state.direction = "CALL"
+            st.session_state.step = 3
+            st.rerun()
+            
+    with c2:
+        if st.button("📉 DOWN (Put)"):
+            st.session_state.direction = "PUT"
+            st.session_state.step = 3
+            st.rerun()
+            
+    if st.button("⬅️ Back"):
+        st.session_state.step = 1
+        st.rerun()
+
+# ==================================================
+#                 STEP 3: THE BET
+# ==================================================
+elif st.session_state.step == 3:
+    show_progress(75)
+    st.markdown(f"### 💸 Step 3: How much to bet?")
+    
+    # Slider for gamified feel
+    bet = st.slider("Bet Amount ($)", 100, int(st.session_state.balance), 1000)
+    st.markdown(f"<h2 style='text-align: center;'>${bet:,.2f}</h2>", unsafe_allow_html=True)
+    
+    # THE ORACLE CHECK (This is the "Complex Reasoning" appearing simply)
+    st.divider()
+    with st.spinner("🔮 The Oracle is analyzing Wall Street data..."):
+        time.sleep(1) # Fake delay for dramatic effect
+        verdict, reason, price = get_oracle_advice(st.session_state.ticker, st.session_state.direction)
+    
+    # DISPLAY VERDICT
+    if verdict == "GOOD":
+        st.markdown(f"<div class='feedback-good'>✅ <b>GREEN LIGHT</b><br>{reason}</div>", unsafe_allow_html=True)
+        disable_button = False
+    elif verdict == "WARNING":
+        st.markdown(f"<div class='feedback-warn'>⚠️ <b>BE CAREFUL</b><br>{reason}</div>", unsafe_allow_html=True)
+        disable_button = False
+    elif verdict == "BAD":
+        st.markdown(f"<div class='feedback-bad'>🛑 <b>DANGER</b><br>{reason}</div>", unsafe_allow_html=True)
+        disable_button = False # We let them trade, but we warned them (Robinhood style)
+    else:
+        st.error("Could not find stock data. Is the ticker right?")
+        disable_button = True
+
+    st.write("")
+    if st.button("🎰 PLACE TRADE", disabled=disable_button):
+        # Execute Trade
+        st.session_state.balance -= bet
+        st.session_state.portfolio.append({
+            "Date": datetime.now().strftime("%Y-%m-%d %H:%M"),
+            "Ticker": st.session_state.ticker,
+            "Type": st.session_state.direction,
+            "Price": price,
+            "Amount": bet,
+            "Result": "PENDING"
         })
-        chart_data[item['ticker']] = (sym_df / sym_df.iloc[0] - 1) * 100
-    except: continue
+        st.session_state.step = 4
+        st.rerun()
+        
+    if st.button("⬅️ Back"):
+        st.session_state.step = 2
+        st.rerun()
 
-# Correlation Table
-corr_df = pd.DataFrame(correlation_data).sort_values(by="Correlation", ascending=False)
-
-st.dataframe(
-    corr_df,
-    column_config={
-        "Correlation": st.column_config.ProgressColumn(
-            "Correlation (0-1)",
-            help="1.0 = Moves Identically. 0.0 = No Relation.",
-            min_value=-1, max_value=1, format="%.2f",
-        ),
-        "Performance": st.column_config.NumberColumn("Return (%)", format="%.2f%%")
-    },
-    hide_index=True, use_container_width=True
-)
-
-# Relative Perf Chart
-st.markdown("### 📈 Ecosystem Performance")
-perf_fig = go.Figure()
-perf_fig.add_trace(go.Scatter(x=chart_data.index, y=chart_data[selected_ticker], mode='lines', name=selected_ticker, line=dict(color='white', width=4)))
-colors = ['#00FF00', '#FF0000', '#0088FF', '#FFA500', '#FF00FF']
-for i, row in corr_df.iterrows():
-    perf_fig.add_trace(go.Scatter(x=chart_data.index, y=chart_data[row['Ticker']], mode='lines', name=row['Ticker'], line=dict(width=2, color=colors[i % len(colors)])))
-
-perf_fig.update_layout(template="plotly_dark", height=400, margin=dict(l=0, r=0, t=0, b=0))
-st.plotly_chart(perf_fig, use_container_width=True)
+# ==================================================
+#                 STEP 4: SUCCESS
+# ==================================================
+elif st.session_state.step == 4:
+    show_progress(100)
+    st.balloons() # DOPAMINE HIT
+    
+    st.markdown("<h1 style='text-align: center;'>🎉 TRADE EXECUTED!</h1>", unsafe_allow_html=True)
+    st.markdown(f"<div class='game-card'><p>You bet <b>${st.session_state.portfolio[-1]['Amount']}</b> on <b>{st.session_state.ticker}</b> going <b>{st.session_state.portfolio[-1]['Type']}</b>.</p></div>", unsafe_allow_html=True)
+    
+    if st.button("🏠 Return Home"):
+        st.session_state.step = 0
+        st.rerun()
