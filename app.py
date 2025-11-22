@@ -236,27 +236,23 @@ def page_academy():
             * **Benefit:** You collect rent (Theta) from both sides.
             * **Tradeoff:** If the stock explodes Up or Down, you lose. Best for boring markets.
             """)
-
 # ==================================================
 #                 PAGE 3: THE TERMINAL (PRO)
 # ==================================================
 def page_terminal():
-    # --- QUANT ENGINE (FIXED: VECTOR SAFE) ---
+    # --- QUANT ENGINE ---
     class QuantEngine:
         def __init__(self, risk_free_rate=0.045):
             self.r = risk_free_rate
 
         def black_scholes_call(self, S, K, T, sigma):
-            # Using np.maximum for vector operations
             if isinstance(T, float) and T <= 0.001: return max(0.0, S - K)
-            
             d1 = (np.log(S / K) + (self.r + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
             d2 = d1 - sigma * np.sqrt(T)
             return S * norm.cdf(d1) - K * np.exp(-self.r * T) * norm.cdf(d2)
 
         def black_scholes_put(self, S, K, T, sigma):
             if isinstance(T, float) and T <= 0.001: return max(0.0, K - S)
-            
             d1 = (np.log(S / K) + (self.r + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
             d2 = d1 - sigma * np.sqrt(T)
             return K * np.exp(-self.r * T) * norm.cdf(-d2) - S * norm.cdf(-d1)
@@ -272,6 +268,34 @@ def page_terminal():
             return df.loc[df['delta_diff'].idxmin()]
 
     quant = QuantEngine()
+
+    # --- HEDGE FUND MODULE: IV RANK ENGINE ---
+    def get_iv_rank(stock_obj):
+        """
+        Calculates the IV Rank by looking at 1 year of historical volatility.
+        IV Rank = (Current IV - Low IV) / (High IV - Low IV)
+        """
+        try:
+            # We use historical volatility as a proxy for IV history 
+            # (since real historical IV data is expensive/paid)
+            hist = stock_obj.history(period="1y")
+            hist['Log_Ret'] = np.log(hist['Close'] / hist['Close'].shift(1))
+            
+            # Rolling 30-day volatility (annualized)
+            hist['Volatility'] = hist['Log_Ret'].rolling(window=30).std() * np.sqrt(252) * 100
+            
+            # Drop NaNs
+            vol_data = hist['Volatility'].dropna()
+            
+            current_vol = vol_data.iloc[-1]
+            min_vol = vol_data.min()
+            max_vol = vol_data.max()
+            
+            # Calculate Rank
+            iv_rank = (current_vol - min_vol) / (max_vol - min_vol) * 100
+            return current_vol, iv_rank
+        except:
+            return 0, 0
 
     def get_chain(ticker, expiry):
         stock = yf.Ticker(ticker)
@@ -298,7 +322,6 @@ def page_terminal():
         ticker = lookup_ticker(raw_input)
         if ticker != raw_input.upper(): st.caption(f"✅ Found: **{ticker}**")
     
-    # ERROR HANDLING WRAPPER
     try:
         stock = yf.Ticker(ticker)
         hist = stock.history(period="5d")
@@ -314,19 +337,46 @@ def page_terminal():
         with c2: expiry = st.selectbox("Expiration", exps[:12])
         with c3: view = st.selectbox("Strategy", ["Bullish (Call Spread)", "Bearish (Put Spread)", "Neutral (Income Strangle)"])
 
-        with st.spinner(f"Structuring trades for {ticker}..."):
+        with st.spinner(f"Running Volatility Regime Analysis for {ticker}..."):
             current_price = hist['Close'].iloc[-1]
             
-            # GREEKS CALCULATION
+            # --- VOLATILITY REGIME (THE UPGRADE) ---
+            curr_vol, iv_rank = get_iv_rank(stock)
+            
+            # Regime Logic
+            regime_color = "gray"
+            regime_msg = "Neutral"
+            if iv_rank > 60: 
+                regime_color = "#00FF00" # Green for Selling
+                regime_msg = "RICH (Good for Selling)"
+            elif iv_rank < 30:
+                regime_color = "#FF4B4B" # Red for Selling (Better to Buy)
+                regime_msg = "CHEAP (Good for Buying)"
+            else:
+                regime_msg = "FAIR (Normal)"
+
+            # GREEKS
             _, calls, puts = get_chain(ticker, expiry)
             calls = calculate_greeks(calls, current_price, expiry, "call")
             puts = calculate_greeks(puts, current_price, expiry, "put")
-            
-            # CALC DAYS TO EXPIRY
             dte = (datetime.strptime(expiry, '%Y-%m-%d') - datetime.now()).days
-            st.metric("Spot Price", f"${current_price:.2f}", f"{dte} DTE")
+
+            # --- DASHBOARD METRICS ---
+            st.markdown("### 📊 Market Conditions")
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("Spot Price", f"${current_price:.2f}")
+            m2.metric("Days to Expiry", f"{dte}")
+            m3.metric("Current Volatility", f"{curr_vol:.1f}%")
+            m4.metric("IV Rank (1 Year)", f"{iv_rank:.0f}%", regime_msg, delta_color="off")
             
-            # STRATEGY LOGIC
+            # VISUAL GAUGE FOR IV RANK
+            st.progress(int(iv_rank), text=f"Volatility Percentile: {iv_rank:.0f}%")
+            if iv_rank > 80: st.caption("⚠️ **Extremely High Volatility.** Expect price swings. Options are expensive.")
+            if iv_rank < 10: st.caption("💤 **Extremely Low Volatility.** Market is sleeping. Options are cheap.")
+            
+            st.divider()
+
+            # --- STRATEGY LOGIC ---
             trade = {}
             if "Bullish" in view:
                 buy_leg = quant.find_closest_strike(calls, 0.50)
@@ -349,7 +399,7 @@ def page_terminal():
                 call_leg['type'] = "call"; put_leg['type'] = "put"
                 trade = {"Legs": [call_leg, put_leg], "Type": "Short Strangle (Income)"}
             
-            # RENDERER
+            # --- RENDERER ---
             if trade:
                 st.subheader(f"🤖 Generated: {trade['Type']}")
                 total_price = 0
@@ -377,10 +427,15 @@ def page_terminal():
                 </div>
                 """, unsafe_allow_html=True)
                 
+                # --- INTELLIGENT WARNINGS (THE HEDGE FUND EDGE) ---
+                if "Income" in trade['Type'] and iv_rank < 30:
+                    st.error("⚠️ **Strategy Mismatch:** You are selling options (Income) when Volatility is LOW. This is bad expectancy. Consider Buying Spreads instead.")
+                if "Debit" in trade['Type'] and iv_rank > 70:
+                    st.warning("⚠️ **Strategy Mismatch:** You are buying options (Debit) when Volatility is HIGH. You are overpaying.")
+
                 # SIMULATION LAB
                 st.divider()
                 st.subheader("🧪 Casino Probability Lab")
-                st.caption("Advanced Risk Analysis using Monte Carlo approximations.")
                 
                 sim_col1, sim_col2 = st.columns(2)
                 with sim_col1: 
@@ -389,7 +444,6 @@ def page_terminal():
                 with sim_col2: 
                     vol_adjust = st.slider("⚡ Volatility Adjustment (%)", -80, 300, 0)
 
-                # MATH ENGINE (VECTORIZED)
                 spot_range = np.linspace(current_price * 0.7, current_price * 1.3, 200)
                 
                 pnl_expiration = np.zeros_like(spot_range) - (total_price * 100)
@@ -417,7 +471,6 @@ def page_terminal():
                     if leg['side'] == "BUY": pnl_simulated += (new_price * 100)
                     else: pnl_simulated -= (new_price * 100)
 
-                # CALCULATE PROBABILITY & EV
                 sigma_now = trade['Legs'][0]['impliedVolatility']
                 T_full = max(0.001, dte / 365.0)
                 pdf = norm.pdf(np.log(spot_range / current_price), loc=(0.045 - 0.5 * sigma_now**2) * T_full, scale=sigma_now * np.sqrt(T_full))
