@@ -29,12 +29,6 @@ st.markdown("""
     div.stButton > button {
         width: 100%; border-radius: 8px; font-weight: bold;
     }
-    
-    /* ACADEMY STYLING */
-    .lesson-box {
-        background: #1f1f1f; padding: 20px; border-radius: 10px; border-left: 4px solid #00AAFF; margin-bottom: 20px;
-    }
-    .analogy-text { font-style: italic; color: #aaa; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -95,162 +89,50 @@ def page_home():
         if st.button("Launch Terminal ->", key="home_terminal"): set_page('terminal')
 
 # ==================================================
-#                 PAGE 2: THE ACADEMY (DEEP DIVE)
+#                 PAGE 2: THE ACADEMY
 # ==================================================
 def page_academy():
     st.title("🎓 OpStruct University")
-    st.caption("A comprehensive guide to derivatives trading.")
     
     tab1, tab2, tab3, tab4 = st.tabs(["101: The Contract", "201: The Casino Rule", "301: The Greeks", "401: Spreads"])
     
-    # --- MODULE 1: THE CONTRACT ---
     with tab1:
         st.header("The Foundation")
-        st.markdown("An Option is simply a contract that gives you a **Superpower** for a specific amount of time.")
-        
         c1, c2 = st.columns(2)
         with c1:
-            st.markdown("### 📞 The CALL Option (Bullish)")
-            st.info("The Right to BUY.")
-            st.markdown("""
-            **The Analogy: The Real Estate Deposit**
-            
-            Imagine you want to buy a house listed for **$500,000**, but you don't have the money yet.
-            You pay the owner **$5,000** (Premium) to hold the house for you for **30 Days**.
-            
-            * **Scenario A:** A new highway is built nearby, and the house value shoots to **$600,000**.
-                * You exercise your contract. You buy it at the locked price of $500k.
-                * You immediately sell it for $600k.
-                * **Profit:** $100,000 - $5,000 (Cost) = **$95,000**.
-            
-            * **Scenario B:** The house value drops to **$400,000**.
-                * You are not forced to buy it. You walk away.
-                * **Loss:** Only the **$5,000** deposit.
-            """)
-            
+            st.info("📞 **CALL** = The Coupon (Betting UP)")
+            st.write("You pay $5 for the right to buy a TV at $500. If price hits $600, you profit.")
         with c2:
-            st.markdown("### 📉 The PUT Option (Bearish)")
-            st.info("The Right to SELL.")
-            st.markdown("""
-            **The Analogy: Car Insurance**
-            
-            You own a Ferrari worth **$200,000**. You are worried about crashing.
-            You pay Geico **$1,000** (Premium) for a policy that guarantees the value at $200k for **1 Year**.
-            
-            * **Scenario A:** You crash the car. It is now worth **$0**.
-                * Geico pays you the full **$200,000**.
-                * You avoided financial ruin.
-            
-            * **Scenario B:** You drive safely. The car is fine.
-                * The policy expires.
-                * **Loss:** Only the **$1,000** premium.
-            """)
+            st.info("📉 **PUT** = The Insurance (Betting DOWN)")
+            st.write("You pay $100 to insure your car. If it crashes (stock drops), you get paid.")
 
-    # --- MODULE 2: BUYING VS SELLING ---
     with tab2:
-        st.header("Who makes the money?")
-        st.markdown("Every trade has a Buyer and a Seller. Their odds are different.")
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            st.markdown("### 👤 The Buyer (The Gambler)")
-            st.write("You pay a Premium to own the contract.")
-            st.markdown("""
-            * **Risk:** Limited (You can only lose what you paid).
-            * **Reward:** Unlimited (The stock can go to the moon).
-            * **Win Rate:** **LOW.** (Most options expire worthless).
-            * **Enemy:** Time. Every day the stock doesn't move, you lose money.
-            """)
-            
-        with col2:
-            st.markdown("### 🏦 The Seller (The Casino)")
-            st.write("You collect the Premium and take on the obligation.")
-            st.markdown("""
-            * **Risk:** potentially UNLIMITED (unless hedged).
-            * **Reward:** Limited (You keep the premium).
-            * **Win Rate:** **HIGH.** (You win if the stock does nothing).
-            * **Ally:** Time. You get paid for every day the stock sits still.
-            """)
-            
-        st.divider()
-        st.warning("🚀 **OpStruct Philosophy:** We want the Win Rate of the Casino, but with the Safety of the Gambler. That is why we use **Spreads** (Tab 4).")
+        st.header("Buying vs Selling")
+        st.markdown("**Buying Options:** Limited Risk, Low Probability of Profit.\n\n**Selling Options:** High Probability of Profit, Unlimited Risk (unless hedged).")
+        st.warning("OpStruct uses **Spreads** (Buying + Selling) to get the best of both worlds.")
 
-    # --- MODULE 3: THE GREEKS ---
     with tab3:
-        st.header("The Greeks (The Dashboard)")
-        st.markdown("Options prices aren't random. They are driven by 4 variables.")
-        
-        with st.expander("Δ DELTA (Speed & Probability)", expanded=True):
-            st.markdown("""
-            **What it is:** How much the option price moves for every $1 the stock moves.
-            
-            * **The Cheat Code:** Delta is roughly the **% Probability** the option will win.
-            * **Example:** A `0.30 Delta` option has a ~30% chance of expiring in the money.
-            * **Use it for:** Choosing your risk level.
-            """)
-            
-        with st.expander("Θ THETA (Time Decay)"):
-            st.markdown("""
-            **What it is:** How much value the option loses **every single day**.
-            
-            * **The Analogy:** An Ice Cube melting.
-            * **For Buyers:** Theta is your enemy. You are racing against the melt.
-            * **For Sellers:** Theta is your friend. You are collecting the 'melt' as income.
-            """)
-            
-        with st.expander("ν VEGA (Fear / Volatility)"):
-            st.markdown("""
-            **What it is:** Sensitivity to Volatility (Implied Volatility).
-            
-            * **The Analogy:** The 'Panic' Tax.
-            * **High Vega:** When the market crashes, fear spikes. Options become incredibly expensive (like buying water in a desert).
-            * **Strategy:** Sell High Vega (when everyone is scared). Buy Low Vega (when everyone is calm).
-            """)
-            
-        with st.expander("Γ GAMMA (Acceleration)"):
-            st.markdown("""
-            **What it is:** How fast Delta changes.
-            * **The Danger Zone:** Gamma explodes in the last week before expiration. It turns small moves into massive P&L swings. This is why trading 0-Day options (0DTE) is like juggling dynamite.
-            """)
+        st.header("The Greeks")
+        st.metric("Δ Delta", "Probability", "Direction")
+        st.metric("Θ Theta", "Time Decay", "Ice Cube Melting")
+        st.metric("ν Vega", "Volatility", "Panic Tax")
 
-    # --- MODULE 4: STRATEGIES ---
     with tab4:
-        st.header("Structuring the Trade")
-        st.markdown("Never trade 'Naked' (Buy/Sell single options). Use 'Spreads' to engineer your edge.")
-        
-        c1, c2 = st.columns(2)
-        with c1:
-            st.markdown("### 🐂 The Vertical Spread")
-            st.write("**Strategy:** Buy an Expensive Option, Sell a Cheaper Option.")
-            st.markdown("""
-            * **Why?** The option you SELL pays for part of the option you BUY.
-            * **Benefit:** It lowers your cost and raises your Breakeven price.
-            * **Tradeoff:** You cap your maximum profit. (But we don't care about hitting home runs; we want base hits).
-            """)
-            
-        with c2:
-            st.markdown("### 🦅 The Iron Condor")
-            st.write("**Strategy:** Sell a Call above the price, Sell a Put below the price.")
-            st.markdown("""
-            * **Why?** You are betting the stock will stay in a "Range."
-            * **Benefit:** You collect rent (Theta) from both sides.
-            * **Tradeoff:** If the stock explodes Up or Down, you lose. Best for boring markets.
-            """)
+        st.header("Structuring")
+        st.success("By combining legs, we create 'Shapes' (Verticals, Condors) that define exactly how much we can make or lose.")
+
 # ==================================================
 #                 PAGE 3: THE TERMINAL (PRO)
 # ==================================================
 def page_terminal():
-    # --- QUANT ENGINE ---
     class QuantEngine:
         def __init__(self, risk_free_rate=0.045):
             self.r = risk_free_rate
-
         def black_scholes_call(self, S, K, T, sigma):
             if isinstance(T, float) and T <= 0.001: return max(0.0, S - K)
             d1 = (np.log(S / K) + (self.r + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
             d2 = d1 - sigma * np.sqrt(T)
             return S * norm.cdf(d1) - K * np.exp(-self.r * T) * norm.cdf(d2)
-
         def black_scholes_put(self, S, K, T, sigma):
             if isinstance(T, float) and T <= 0.001: return max(0.0, K - S)
             d1 = (np.log(S / K) + (self.r + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
@@ -269,33 +151,15 @@ def page_terminal():
 
     quant = QuantEngine()
 
-    # --- HEDGE FUND MODULE: IV RANK ENGINE ---
     def get_iv_rank(stock_obj):
-        """
-        Calculates the IV Rank by looking at 1 year of historical volatility.
-        IV Rank = (Current IV - Low IV) / (High IV - Low IV)
-        """
         try:
-            # We use historical volatility as a proxy for IV history 
-            # (since real historical IV data is expensive/paid)
             hist = stock_obj.history(period="1y")
             hist['Log_Ret'] = np.log(hist['Close'] / hist['Close'].shift(1))
-            
-            # Rolling 30-day volatility (annualized)
             hist['Volatility'] = hist['Log_Ret'].rolling(window=30).std() * np.sqrt(252) * 100
-            
-            # Drop NaNs
             vol_data = hist['Volatility'].dropna()
-            
             current_vol = vol_data.iloc[-1]
-            min_vol = vol_data.min()
-            max_vol = vol_data.max()
-            
-            # Calculate Rank
-            iv_rank = (current_vol - min_vol) / (max_vol - min_vol) * 100
-            return current_vol, iv_rank
-        except:
-            return 0, 0
+            return current_vol, (current_vol - vol_data.min()) / (vol_data.max() - vol_data.min()) * 100
+        except: return 0, 0
 
     def get_chain(ticker, expiry):
         stock = yf.Ticker(ticker)
@@ -325,35 +189,29 @@ def page_terminal():
     try:
         stock = yf.Ticker(ticker)
         hist = stock.history(period="5d")
-        if hist.empty:
-            st.error(f"❌ Could not find data for '{ticker}'.")
-            return
-        
+        if hist.empty: return
         exps = stock.options
-        if not exps:
-            st.warning(f"⚠️ '{ticker}' has no options chain.")
-            return
+        if not exps: return
 
         with c2: expiry = st.selectbox("Expiration", exps[:12])
         with c3: view = st.selectbox("Strategy", ["Bullish (Call Spread)", "Bearish (Put Spread)", "Neutral (Income Strangle)"])
 
-        with st.spinner(f"Running Volatility Regime Analysis for {ticker}..."):
+        with st.spinner(f"Running Analysis for {ticker}..."):
             current_price = hist['Close'].iloc[-1]
-            
-            # --- VOLATILITY REGIME (THE UPGRADE) ---
             curr_vol, iv_rank = get_iv_rank(stock)
             
-            # Regime Logic
-            regime_color = "gray"
+            # DASHBOARD METRICS
+            st.markdown("### 📊 Volatility Regime")
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Spot Price", f"${current_price:.2f}")
+            m2.metric("IV Rank", f"{iv_rank:.0f}%")
+            
             regime_msg = "Neutral"
-            if iv_rank > 60: 
-                regime_color = "#00FF00" # Green for Selling
-                regime_msg = "RICH (Good for Selling)"
-            elif iv_rank < 30:
-                regime_color = "#FF4B4B" # Red for Selling (Better to Buy)
-                regime_msg = "CHEAP (Good for Buying)"
-            else:
-                regime_msg = "FAIR (Normal)"
+            if iv_rank > 50: regime_msg = "HIGH (Expensive Options)"
+            elif iv_rank < 20: regime_msg = "LOW (Cheap Options)"
+            m3.metric("Regime", regime_msg)
+            
+            st.divider()
 
             # GREEKS
             _, calls, puts = get_chain(ticker, expiry)
@@ -361,45 +219,30 @@ def page_terminal():
             puts = calculate_greeks(puts, current_price, expiry, "put")
             dte = (datetime.strptime(expiry, '%Y-%m-%d') - datetime.now()).days
 
-            # --- DASHBOARD METRICS ---
-            st.markdown("### 📊 Market Conditions")
-            m1, m2, m3, m4 = st.columns(4)
-            m1.metric("Spot Price", f"${current_price:.2f}")
-            m2.metric("Days to Expiry", f"{dte}")
-            m3.metric("Current Volatility", f"{curr_vol:.1f}%")
-            m4.metric("IV Rank (1 Year)", f"{iv_rank:.0f}%", regime_msg, delta_color="off")
-            
-            # VISUAL GAUGE FOR IV RANK
-            st.progress(int(iv_rank), text=f"Volatility Percentile: {iv_rank:.0f}%")
-            if iv_rank > 80: st.caption("⚠️ **Extremely High Volatility.** Expect price swings. Options are expensive.")
-            if iv_rank < 10: st.caption("💤 **Extremely Low Volatility.** Market is sleeping. Options are cheap.")
-            
-            st.divider()
-
-            # --- STRATEGY LOGIC ---
+            # STRATEGY LOGIC
             trade = {}
             if "Bullish" in view:
                 buy_leg = quant.find_closest_strike(calls, 0.50)
                 sell_leg = quant.find_closest_strike(calls, 0.30)
                 buy_leg['side'] = "BUY"; sell_leg['side'] = "SELL"
                 buy_leg['type'] = "call"; sell_leg['type'] = "call"
-                trade = {"Legs": [buy_leg, sell_leg], "Type": "Call Debit Spread (Bullish)"}
+                trade = {"Legs": [buy_leg, sell_leg], "Type": "Call Debit Spread"}
 
             elif "Bearish" in view:
                 buy_leg = quant.find_closest_strike(puts, -0.50)
                 sell_leg = quant.find_closest_strike(puts, -0.30)
                 buy_leg['side'] = "BUY"; sell_leg['side'] = "SELL"
                 buy_leg['type'] = "put"; sell_leg['type'] = "put"
-                trade = {"Legs": [buy_leg, sell_leg], "Type": "Put Debit Spread (Bearish)"}
+                trade = {"Legs": [buy_leg, sell_leg], "Type": "Put Debit Spread"}
 
             elif "Neutral" in view:
                 call_leg = quant.find_closest_strike(calls, 0.20)
                 put_leg = quant.find_closest_strike(puts, -0.20)
                 call_leg['side'] = "SELL"; put_leg['side'] = "SELL"
                 call_leg['type'] = "call"; put_leg['type'] = "put"
-                trade = {"Legs": [call_leg, put_leg], "Type": "Short Strangle (Income)"}
+                trade = {"Legs": [call_leg, put_leg], "Type": "Short Strangle"}
             
-            # --- RENDERER ---
+            # RENDERER
             if trade:
                 st.subheader(f"🤖 Generated: {trade['Type']}")
                 total_price = 0
@@ -407,17 +250,13 @@ def page_terminal():
                 
                 for leg in trade['Legs']:
                     price = leg['lastPrice']
-                    strike = leg['strike']
-                    delta = leg['calc_delta']
                     side = leg['side']
-                    
                     if side == "BUY": total_price += price
                     else: total_price -= price
-                    
                     color = "🟢" if side == "BUY" else "🔴"
-                    legs_html += f"<p>{color} <b>{side}</b> ${strike} (Delta: {delta:.2f}) - ${price:.2f}</p>"
+                    legs_html += f"<p>{color} <b>{side}</b> ${leg['strike']} (Delta: {leg['calc_delta']:.2f}) - ${price:.2f}</p>"
 
-                cost_label = f"Est. Debit: ${total_price*100:.2f}" if total_price > 0 else f"Est. Credit: ${abs(total_price)*100:.2f} (Income)"
+                cost_label = f"Est. Debit: ${total_price*100:.2f}" if total_price > 0 else f"Est. Credit: ${abs(total_price)*100:.2f}"
 
                 st.markdown(f"""
                 <div style="background: #111; padding: 20px; border-left: 5px solid #00FF00; border-radius: 10px;">
@@ -427,15 +266,9 @@ def page_terminal():
                 </div>
                 """, unsafe_allow_html=True)
                 
-                # --- INTELLIGENT WARNINGS (THE HEDGE FUND EDGE) ---
-                if "Income" in trade['Type'] and iv_rank < 30:
-                    st.error("⚠️ **Strategy Mismatch:** You are selling options (Income) when Volatility is LOW. This is bad expectancy. Consider Buying Spreads instead.")
-                if "Debit" in trade['Type'] and iv_rank > 70:
-                    st.warning("⚠️ **Strategy Mismatch:** You are buying options (Debit) when Volatility is HIGH. You are overpaying.")
-
-                # SIMULATION LAB
+                # --- SIMULATION & CHART ---
                 st.divider()
-                st.subheader("🧪 Casino Probability Lab")
+                st.subheader("🧪 Probability Lab")
                 
                 sim_col1, sim_col2 = st.columns(2)
                 with sim_col1: 
@@ -446,59 +279,43 @@ def page_terminal():
 
                 spot_range = np.linspace(current_price * 0.7, current_price * 1.3, 200)
                 
+                # Expiration P&L
                 pnl_expiration = np.zeros_like(spot_range) - (total_price * 100)
                 for leg in trade['Legs']:
-                    if leg['type'] == "call":
-                        payoff = np.maximum(0, spot_range - leg['strike']) * 100
-                    else:
-                        payoff = np.maximum(0, leg['strike'] - spot_range) * 100
-                    
-                    if leg['side'] == "BUY": pnl_expiration += payoff
-                    else: pnl_expiration -= payoff
+                    payoff = np.maximum(0, spot_range - leg['strike']) if leg['type'] == "call" else np.maximum(0, leg['strike'] - spot_range)
+                    pnl_expiration += (payoff * 100) if leg['side'] == "BUY" else -(payoff * 100)
 
+                # Simulated P&L
                 pnl_simulated = np.zeros_like(spot_range) - (total_price * 100)
                 sim_T = max(0.001, (dte - days_forward) / 365.0)
-                
                 for leg in trade['Legs']:
-                    sim_sigma = (leg['impliedVolatility'] * (1 + vol_adjust/100))
-                    if sim_sigma < 0.01: sim_sigma = 0.01
-                    
-                    if leg['type'] == "call":
-                        new_price = quant.black_scholes_call(spot_range, leg['strike'], sim_T, sim_sigma)
-                    else:
-                        new_price = quant.black_scholes_put(spot_range, leg['strike'], sim_T, sim_sigma)
-                    
-                    if leg['side'] == "BUY": pnl_simulated += (new_price * 100)
-                    else: pnl_simulated -= (new_price * 100)
-
-                sigma_now = trade['Legs'][0]['impliedVolatility']
-                T_full = max(0.001, dte / 365.0)
-                pdf = norm.pdf(np.log(spot_range / current_price), loc=(0.045 - 0.5 * sigma_now**2) * T_full, scale=sigma_now * np.sqrt(T_full))
-                pdf = pdf / pdf.sum()
-                
-                expected_value = np.sum(pnl_expiration * pdf)
-                prob_profit = np.sum(pdf[pnl_expiration > 0]) * 100
-                
-                m1, m2, m3 = st.columns(3)
-                m1.metric("Win Probability (PoP)", f"{prob_profit:.1f}%")
-                ev_color = "normal" if expected_value > 0 else "inverse"
-                m2.metric("Expected Value (EV)", f"${expected_value:.2f}", "Avg return per trade", delta_color=ev_color)
-                
-                max_loss = np.min(pnl_expiration)
-                max_win = np.max(pnl_expiration)
-                m3.metric("Max Risk / Reward", f"${max_loss:.0f} / ${max_win:.0f}")
+                    sim_sigma = max(0.01, leg['impliedVolatility'] * (1 + vol_adjust/100))
+                    new_price = quant.black_scholes_call(spot_range, leg['strike'], sim_T, sim_sigma) if leg['type'] == "call" else quant.black_scholes_put(spot_range, leg['strike'], sim_T, sim_sigma)
+                    pnl_simulated += (new_price * 100) if leg['side'] == "BUY" else -(new_price * 100)
 
                 fig = go.Figure()
-                fig.add_trace(go.Scatter(x=spot_range, y=pnl_expiration, mode='lines', 
-                                         name='Expiration P&L', line=dict(color='white', dash='dot')))
-                fig.add_trace(go.Scatter(x=spot_range, y=pnl_simulated, mode='lines', 
-                                         name=f'Simulated (T+{days_forward})', fill='tozeroy', 
-                                         line=dict(color='#00FF00' if expected_value > 0 else '#FF4B4B')))
-                
+                fig.add_trace(go.Scatter(x=spot_range, y=pnl_expiration, mode='lines', name='At Expiration (Hard Truth)', line=dict(color='white', dash='dot')))
+                fig.add_trace(go.Scatter(x=spot_range, y=pnl_simulated, mode='lines', name=f'Simulated (T+{days_forward})', fill='tozeroy', line=dict(color='#00FF00' if pnl_simulated.max() > 0 else '#FF4B4B')))
                 fig.add_hline(y=0, line_color="gray", line_width=1)
                 fig.add_vline(x=current_price, line_color="yellow", annotation_text="Spot")
-                fig.update_layout(template="plotly_dark", height=500, title="Probability-Weighted Outcome", yaxis_title="P/L ($)")
+                fig.update_layout(template="plotly_dark", height=500, title="Projected Outcome", yaxis_title="P/L ($)")
                 st.plotly_chart(fig, use_container_width=True)
+                
+                # --- CHART DECODER (THE EXPLANATION) ---
+                with st.expander("🔍 How to read this chart (The 'Aha!' Moment)"):
+                    st.markdown("""
+                    This chart shows you the **Future**:
+                    
+                    1.  **The X-Axis (Bottom):** The price of the stock in the future.
+                    2.  **The Y-Axis (Left):** How much money you make (Green) or lose (Red).
+                    3.  **The Two Lines:**
+                        * ⚪ **White Dotted Line (Expiration):** This is the "Hard Truth." This is exactly what you get paid on the final day. No math, just logic.
+                        * 🌈 **Solid Colored Line (Today/Simulated):** This is the value of your trade **right now**.
+                    
+                    **Try this:**
+                    * Slide **Time Travel** forward. Watch the *Colored Line* melt into the *White Line*. That is **Theta Decay** happening before your eyes.
+                    * Slide **Volatility** up. Watch the *Colored Line* float higher. That is **Vega** (Panic) inflating the prices.
+                    """)
 
     except Exception as e:
         st.error(f"Analysis Error: {e}")
