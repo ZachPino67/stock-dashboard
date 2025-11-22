@@ -37,6 +37,7 @@ def calculate_probability_of_profit(current_price, strike_price, days_to_exp, iv
     return prob_itm
 
 @st.cache_data(ttl=60)
+# --- REMOVED THE CACHE DECORATOR TO FIX THE CRASH ---
 def get_option_chain_data(ticker):
     stock = yf.Ticker(ticker)
     try:
@@ -44,7 +45,6 @@ def get_option_chain_data(ticker):
         return stock, exps
     except:
         return None, []
-
 # --- UI: SIDEBAR (INPUTS) ---
 st.sidebar.title("📐 OpStruct AI")
 st.sidebar.markdown("Automated Derivatives Structuring")
