@@ -174,13 +174,13 @@ ACADEMY_CONTENT = {
         "title": "Module 101: The Option Contract",
         "levels": {
             "Rookie": {
-                "Call": "**The Discount Coupon.** Imagine a coupon that guarantees you can buy a TV for $500. If the store price rises to $700, your coupon is instantly worth $200. If the price drops to $400, the coupon is worthless, but you have no obligation to use it.",
-                "Put": "**Car Insurance.** You pay a premium to insure your car. If you crash (the stock drops), the insurance company pays you the difference. If you don't crash, you simply lose the small premium you paid.",
+                "Call": "The Discount Coupon.** Imagine a coupon that guarantees you can buy a TV for $500. If the store price rises to $700, your coupon is instantly worth $200. If the price drops to $400, the coupon is worthless, but you have no obligation to use it.",
+                "Put": "Car Insurance.** You pay a premium to insure your car. If you crash (the stock drops), the insurance company pays you the difference. If you don't crash, you simply lose the small premium you paid.",
                 "Key": "Options give you rights without obligations."
             },
             "Trader": {
-                "Call": "**Bullish Leverage.** A contract giving you the right to buy 100 shares at a specific strike price. It offers uncapped upside with capped downside (cost of the premium). You need price velocity (Delta) to overcome time decay (Theta).",
-                "Put": "**Bearish Protection.** A contract giving you the right to sell 100 shares. Traders use Puts to speculate on downside moves or to hedge existing stock portfolios (reducing portfolio Beta).",
+                "Call": "Bullish Leverage.** A contract giving you the right to buy 100 shares at a specific strike price. It offers uncapped upside with capped downside (cost of the premium). You need price velocity (Delta) to overcome time decay (Theta).",
+                "Put": "Bearish Protection.** A contract giving you the right to sell 100 shares. Traders use Puts to speculate on downside moves or to hedge existing stock portfolios (reducing portfolio Beta).",
                 "Key": "One contract controls 100 shares. Leverage cuts both ways."
             },
             "Quant": {
@@ -194,13 +194,13 @@ ACADEMY_CONTENT = {
         "title": "Module 201: The Casino Rule (Buying vs. Selling)",
         "levels": {
             "Rookie": {
-                "Buy": "**Buying Lottery Tickets.** You pay a small amount for a chance to win big. Most tickets expire worthless. This is a low-probability, high-reward strategy.",
-                "Sell": "**Owning the Casino.** You sell the tickets to others. You collect small payments frequently. Occasionally, someone hits a jackpot and you must pay them, but mathematically, the house always wins in the long run.",
+                "Buy": "Buying Lottery Tickets.** You pay a small amount for a chance to win big. Most tickets expire worthless. This is a low-probability, high-reward strategy.",
+                "Sell": "Owning the Casino.** You sell the tickets to others. You collect small payments frequently. Occasionally, someone hits a jackpot and you must pay them, but mathematically, the house always wins in the long run.",
                 "Key": "Casinos (Sellers) generally make more consistent money than Gamblers (Buyers)."
             },
             "Trader": {
-                "Buy": "**Long Volatility (Debit).** Defined Risk / Unlimited Reward. However, you face a low Probability of Profit (POP). You need the stock to move significantly to overcome the premium paid.",
-                "Sell": "**Short Volatility (Credit).** Unlimited Risk / Defined Reward. High Probability of Profit (POP). You profit if the stock goes your way, stays flat, or even moves slightly against you.",
+                "Buy": "Long Volatility (Debit).** Defined Risk / Unlimited Reward. However, you face a low Probability of Profit (POP). You need the stock to move significantly to overcome the premium paid.",
+                "Sell": "Short Volatility (Credit).** Unlimited Risk / Defined Reward. High Probability of Profit (POP). You profit if the stock goes your way, stays flat, or even moves slightly against you.",
                 "Key": "Professional income strategies often involve selling premium (Theta Decay)."
             },
             "Quant": {
@@ -214,10 +214,10 @@ ACADEMY_CONTENT = {
         "title": "Module 301: The Greeks (Risk Metrics)",
         "levels": {
             "Rookie": {
-                "Delta": "**Speed.** How much your option's price changes for every $1 the stock moves. (e.g., Delta 0.50 means you make 50 cents if the stock goes up $1).",
-                "Theta": "**Time Decay.** The daily fee you pay for holding the option. Like an ice cube melting, your option loses value every day it doesn't move.",
-                "Vega": "**Panic Meter.** How much the option price inflates when the market gets scared. When news hits, prices go up even if the stock doesn't move.",
-                "Key": "The Greeks explain *why* you are making or losing money."
+                "Delta": "Speed. How much your option's price changes for every $1 the stock moves. (e.g., Delta 0.50 means you make 50 cents if the stock goes up $1).",
+                "Theta": "Time Decay. The daily fee you pay for holding the option. Like an ice cube melting, your option loses value every day it doesn't move.",
+                "Vega": "Panic Meter. How much the option price inflates when the market gets scared. When news hits, prices go up even if the stock doesn't move.",
+                "Key": "The Greeks explain why you are making or losing money."
             },
             "Trader": {
                 "Delta": "**Directional Exposure & Probability.** Delta creates your directional bias. It also serves as a proxy for the probability of expiring In-The-Money (ITM). A 30 Delta option has roughly a 30% chance of expiring ITM.",
