@@ -237,17 +237,17 @@ ACADEMY_CONTENT = {
         "title": "Module 401: Structuring Spreads",
         "levels": {
             "Rookie": {
-                "Concept": "**The Combo Meal.** Instead of just buying a burger (Call), you buy a burger and sell a drink to offset the cost. It limits how much food you get, but it's much cheaper.",
+                "Concept": "The Combo Meal. Instead of just buying a burger (Call), you buy a burger and sell a drink to offset the cost. It limits how much food you get, but it's much cheaper.",
                 "Benefit": "It prevents catastrophic loss. You define exactly how much you can lose before you enter the trade, so you can sleep at night.",
                 "Key": "Spreads make trading safer, cheaper, and more predictable."
             },
             "Trader": {
-                "Concept": "**Vertical Spreads.** Simultaneously buying and selling options in the same expiration cycle. This reduces your cost basis (Debit Spreads) or generates income (Credit Spreads) while capping your maximum risk.",
+                "Concept": "Vertical Spreads. Simultaneously buying and selling options in the same expiration cycle. This reduces your cost basis (Debit Spreads) or generates income (Credit Spreads) while capping your maximum risk.",
                 "Benefit": "Defined Risk & Probability Enhancement. A spread lowers the break-even point of a trade, increasing your statistical probability of success compared to a naked option.",
                 "Key": "Most sustainable retail strategies utilize spreads to neutralize volatility risk."
             },
             "Quant": {
-                "Concept": "**Factor Isolation.** Spreads allow a structurer to isolate specific Greeks. A 'Vertical Spread' isolates Delta while neutralizing Vega. A 'Calendar Spread' isolates Theta and Vega while neutralizing Delta.",
+                "Concept": "Factor Isolation. Spreads allow a structurer to isolate specific Greeks. A 'Vertical Spread' isolates Delta while neutralizing Vega. A 'Calendar Spread' isolates Theta and Vega while neutralizing Delta.",
                 "Benefit": "Capital Efficiency & Margin Relief. Spreads drastically reduce margin requirements (Buying Power Reduction) compared to naked positions, improving Return on Capital (ROC).",
                 "Key": "Structuring allows for the precision engineering of the P&L curve topology."
             }
