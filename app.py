@@ -275,8 +275,59 @@ def lookup_ticker(query):
     except: pass
     return query
 
+# --- OPTIMIZED QUANT ENGINE (VECTORIZED) ---
+class VectorizedQuantEngine:
+    def __init__(self, risk_free_rate=0.045):
+        self.r = risk_free_rate
+
+    def calculate_greeks_vectorized(self, df, S, T, sigma_col='impliedVolatility', type='call'):
+        """
+        Performs Black-Scholes calc on the ENTIRE dataframe column at once.
+        0 loops. 100x faster.
+        """
+        # Data cleaning: Ensure Sigma and T are safe
+        sigma = df[sigma_col].replace(0, np.nan).fillna(0.20) # Handle 0 IV
+        K = df['strike']
+        
+        # d1 and d2 Calculation
+        d1 = (np.log(S / K) + (self.r + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
+        d2 = d1 - sigma * np.sqrt(T)
+
+        if type == 'call':
+            # Price
+            df['theo_price'] = S * norm.cdf(d1) - K * np.exp(-self.r * T) * norm.cdf(d2)
+            # Greeks
+            df['delta'] = norm.cdf(d1)
+            df['theta'] = (- (S * sigma * norm.pdf(d1)) / (2 * np.sqrt(T)) - self.r * K * np.exp(-self.r * T) * norm.cdf(d2)) / 365.0
+        else:
+            # Price
+            df['theo_price'] = K * np.exp(-self.r * T) * norm.cdf(-d2) - S * norm.cdf(-d1)
+            # Greeks
+            df['delta'] = norm.cdf(d1) - 1
+            df['theta'] = (- (S * sigma * norm.pdf(d1)) / (2 * np.sqrt(T)) + self.r * K * np.exp(-self.r * T) * norm.cdf(-d2)) / 365.0
+
+        # Gamma and Vega are the same for Calls and Puts
+        df['gamma'] = norm.pdf(d1) / (S * sigma * np.sqrt(T))
+        df['vega'] = S * norm.pdf(d1) * np.sqrt(T) / 100.0
+        
+        return df
+
+    def find_closest_strike(self, df, target_delta):
+        # Vectorized lookup
+        idx = (np.abs(df['delta'] - target_delta)).argmin()
+        return df.iloc[idx]
+
+    def black_scholes_single(self, S, K, T, sigma, type="call"):
+        # For the simulation slider (single value calc)
+        d1 = (np.log(S / K) + (self.r + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
+        d2 = d1 - sigma * np.sqrt(T)
+        if type == "call":
+            return S * norm.cdf(d1) - K * np.exp(-self.r * T) * norm.cdf(d2)
+        else:
+            return K * np.exp(-self.r * T) * norm.cdf(-d2) - S * norm.cdf(-d1)
+
 # ==================================================
-#                 PAGE 1: HOMEPAGE
+#                  PAGE 1: HOMEPAGE
 # ==================================================
 def page_home():
     st.markdown("<br><br>", unsafe_allow_html=True)
@@ -323,7 +374,7 @@ def page_home():
             set_page('terminal')
 
 # ==================================================
-#                 PAGE 2: THE ACADEMY
+#                  PAGE 2: THE ACADEMY
 # ==================================================
 def page_academy():
     st.markdown("## 🎓 OpStruct University")
@@ -431,60 +482,6 @@ def page_academy():
         </div>
         """, unsafe_allow_html=True)
         st.success(f"💡 **Key Takeaway:** {content['Key']}")
-
-# # [KEEP YOUR EXISTING IMPORTS, CSS, AND ACADEMY CODE UP TOP]
-# REPLACE THE QuantEngine AND page_terminal FUNCTIONS WITH THIS:
-
-# --- OPTIMIZED QUANT ENGINE (VECTORIZED) ---
-class VectorizedQuantEngine:
-    def __init__(self, risk_free_rate=0.045):
-        self.r = risk_free_rate
-
-    def calculate_greeks_vectorized(self, df, S, T, sigma_col='impliedVolatility', type='call'):
-        """
-        Performs Black-Scholes calc on the ENTIRE dataframe column at once.
-        0 loops. 100x faster.
-        """
-        # Data cleaning: Ensure Sigma and T are safe
-        sigma = df[sigma_col].replace(0, np.nan).fillna(0.20) # Handle 0 IV
-        K = df['strike']
-        
-        # d1 and d2 Calculation
-        d1 = (np.log(S / K) + (self.r + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
-        d2 = d1 - sigma * np.sqrt(T)
-
-        if type == 'call':
-            # Price
-            df['theo_price'] = S * norm.cdf(d1) - K * np.exp(-self.r * T) * norm.cdf(d2)
-            # Greeks
-            df['delta'] = norm.cdf(d1)
-            df['theta'] = (- (S * sigma * norm.pdf(d1)) / (2 * np.sqrt(T)) - self.r * K * np.exp(-self.r * T) * norm.cdf(d2)) / 365.0
-        else:
-            # Price
-            df['theo_price'] = K * np.exp(-self.r * T) * norm.cdf(-d2) - S * norm.cdf(-d1)
-            # Greeks
-            df['delta'] = norm.cdf(d1) - 1
-            df['theta'] = (- (S * sigma * norm.pdf(d1)) / (2 * np.sqrt(T)) + self.r * K * np.exp(-self.r * T) * norm.cdf(-d2)) / 365.0
-
-        # Gamma and Vega are the same for Calls and Puts
-        df['gamma'] = norm.pdf(d1) / (S * sigma * np.sqrt(T))
-        df['vega'] = S * norm.pdf(d1) * np.sqrt(T) / 100.0
-        
-        return df
-
-    def find_closest_strike(self, df, target_delta):
-        # Vectorized lookup
-        idx = (np.abs(df['delta'] - target_delta)).argmin()
-        return df.iloc[idx]
-
-    def black_scholes_single(self, S, K, T, sigma, type="call"):
-        # For the simulation slider (single value calc)
-        d1 = (np.log(S / K) + (self.r + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
-        d2 = d1 - sigma * np.sqrt(T)
-        if type == "call":
-            return S * norm.cdf(d1) - K * np.exp(-self.r * T) * norm.cdf(d2)
-        else:
-            return K * np.exp(-self.r * T) * norm.cdf(-d2) - S * norm.cdf(-d1)
 
 # ==================================================
 #                  PAGE 3: THE TERMINAL (PRO)
@@ -618,6 +615,14 @@ def page_terminal():
     if 'terminal_data' in st.session_state:
         data = st.session_state['terminal_data']
         
+        # ROBOTIC FIX: Detect Legacy/Stale Session State
+        # The previous version did not store 'calls'/'puts' DataFrames.
+        # If we detect the old format, we must clear state and prompt a re-run.
+        if 'calls' not in data or data['calls'] is None:
+            st.warning("⚠️ Terminal data structure updated. Please click 'Initialize Terminal' again to load new charts.")
+            del st.session_state['terminal_data']
+            st.stop() # Stop execution to prevent the KeyError
+
         # 1. MARKET DATA
         regime_msg = "Normal"
         regime_color = "off"
@@ -741,7 +746,7 @@ def page_terminal():
                 st.plotly_chart(fig, use_container_width=True)
 
 # ==================================================
-#                 MAIN CONTROLLER
+#                  MAIN CONTROLLER
 # ==================================================
 with st.sidebar:
     st.title("OpStruct")
