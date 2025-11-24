@@ -19,7 +19,7 @@ st.set_page_config(
 st.markdown("""
 <style>
     /* GLOBAL THEME */
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&family=JetBrains+Mono:wght@400;700&display=swap');
     
     html, body, [class*="css"] {
         font-family: 'Inter', sans-serif;
@@ -34,6 +34,11 @@ st.markdown("""
     h1, h2, h3 {
         font-weight: 600;
         letter-spacing: -0.5px;
+    }
+    
+    /* TERMINAL FONT FOR NUMBERS */
+    .mono {
+        font-family: 'JetBrains Mono', monospace;
     }
     
     /* CUSTOM CARDS (Glassmorphism) */
@@ -58,17 +63,23 @@ st.markdown("""
         margin-bottom: 8px;
     }
     
-    .concept-emoji {
-        font-size: 2.5rem;
-        margin-bottom: 12px;
+    /* TRADE TICKET STYLES */
+    .trade-ticket {
+        background: #111; 
+        border: 1px solid #333; 
+        border-radius: 8px; 
+        padding: 20px;
+        font-family: 'JetBrains Mono', monospace;
     }
+    .leg-row {
+        display: flex; 
+        justify-content: space-between; 
+        padding: 8px 0; 
+        border-bottom: 1px solid #222;
+    }
+    .leg-buy { color: #00FF88; }
+    .leg-sell { color: #FF4B4B; }
     
-    .card-text {
-        font-size: 0.95rem;
-        color: #B0B3B8;
-        line-height: 1.6;
-    }
-
     /* RADIO BUTTON AS TOGGLES */
     div[role="radiogroup"] {
         background-color: #161B22;
@@ -435,16 +446,22 @@ def page_terminal():
         opt = stock.option_chain(expiry)
         return stock, opt.calls, opt.puts
 
-    def calculate_greeks(df, spot, expiry_date, type="call"):
+    def calculate_greeks(df, spot, expiry_date, backup_vol, type="call"):
         T = (datetime.strptime(expiry_date, "%Y-%m-%d") - datetime.now()).days / 365.0
         if T < 0.001: T = 0.001
         deltas = []
         for index, row in df.iterrows():
-            iv = row['impliedVolatility'] if row['impliedVolatility'] > 0.01 else 0.5
+            # If IV is missing from data (common in yfinance), use historical vol as backup
+            iv = row['impliedVolatility']
+            if iv < 0.01 or pd.isna(iv): 
+                iv = backup_vol / 100.0
+                
             if type == "call": d = quant.get_delta(spot, row['strike'], T, iv, "call")
             else: d = quant.get_delta(spot, row['strike'], T, iv, "put")
             deltas.append(d)
         df['calc_delta'] = deltas
+        # Fallback for empty IV in dataframe
+        df['impliedVolatility'] = df['impliedVolatility'].replace(0, backup_vol/100.0)
         return df
 
     # --- TERMINAL UI ---
@@ -473,7 +490,7 @@ def page_terminal():
             return
 
         with c2: expiry = st.selectbox("Expiration Date", exps[:12])
-        with c3: view = st.selectbox("Market View / Strategy", ["Bullish (Call Debit Spread)", "Bearish (Put Debit Spread)", "Neutral (Iron Condor / Strangle)"])
+        with c3: view = st.selectbox("Market View / Strategy", ["Bullish (Call Debit Spread)", "Bearish (Put Debit Spread)", "Neutral (Income Strangle)"])
 
         # EXECUTION
         if st.button("Run Quant Analysis", type="primary", use_container_width=True):
@@ -502,8 +519,10 @@ def page_terminal():
 
                 # --- GREEK CALCULATION ---
                 _, calls, puts = get_chain(ticker, expiry)
-                calls = calculate_greeks(calls, current_price, expiry, "call")
-                puts = calculate_greeks(puts, current_price, expiry, "put")
+                
+                # Use Historical Vol as backup if Implied Vol is 0 (Fixes 0 Delta Bug)
+                calls = calculate_greeks(calls, current_price, expiry, curr_vol, "call")
+                puts = calculate_greeks(puts, current_price, expiry, curr_vol, "put")
                 dte = (datetime.strptime(expiry, '%Y-%m-%d') - datetime.now()).days
 
                 # --- ALGORITHMIC STRUCTURING ---
@@ -534,33 +553,52 @@ def page_terminal():
                     st.subheader(f"🤖 Algo Recommendation: {trade['Type']}")
                     total_price = 0
                     
-                    # Construct Visual Card
-                    legs_html = ""
+                    # Construct Visual Card using safe HTML construction
+                    rows = ""
                     for leg in trade['Legs']:
                         price = leg['lastPrice']
                         side = leg['side']
                         if side == "BUY": total_price += price
                         else: total_price -= price
                         
-                        color = "#00FF88" if side == "BUY" else "#FF4B4B"
-                        legs_html += f"""
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 8px; border-bottom: 1px solid #333; padding-bottom: 4px;">
-                            <span><b style="color:{color}">{side}</b> {leg['strike']} {leg['type'].upper()}</span>
-                            <span style="color: #aaa;">Δ {leg['calc_delta']:.2f} | ${price:.2f}</span>
+                        css_class = "leg-buy" if side == "BUY" else "leg-sell"
+                        
+                        # We build rows here
+                        rows += f"""
+                        <div class="leg-row">
+                            <span class="mono"><b class="{css_class}">{side}</b> {leg['strike']} {leg['type'].upper()}</span>
+                            <span class="mono" style="color: #888;">Δ {leg['calc_delta']:.2f} | ${price:.2f}</span>
                         </div>
                         """
 
-                    cost_label = f"Net Debit: ${total_price*100:.2f}" if total_price > 0 else f"Net Credit: ${abs(total_price)*100:.2f}"
-
-                    st.markdown(f"""
-                    <div class="concept-card" style="border-left: 5px solid #00A3FF;">
-                        {legs_html}
-                        <div style="text-align: right; margin-top: 10px;">
-                            <h3 style="margin:0;">{cost_label}</h3>
-                            <small style="color: #888;">Excluding commissions & fees</small>
+                    net_cost = total_price * 100
+                    cost_label = f"Net Debit: ${net_cost:.2f}" if total_price > 0 else f"Net Credit: ${abs(net_cost):.2f}"
+                    
+                    # Calculate Breakevens (Rough estimate)
+                    be_html = ""
+                    if trade['Type'] == "Call Debit Spread":
+                        be = trade['Legs'][0]['strike'] + total_price
+                        be_html = f"<div class='mono' style='margin-top:8px; color:#aaa;'>Breakeven: ${be:.2f}</div>"
+                    elif trade['Type'] == "Put Debit Spread":
+                        be = trade['Legs'][0]['strike'] - total_price
+                        be_html = f"<div class='mono' style='margin-top:8px; color:#aaa;'>Breakeven: ${be:.2f}</div>"
+                    
+                    final_html = f"""
+                    <div class="trade-ticket">
+                        <div style="margin-bottom: 10px; color: #fff; font-weight: bold; border-bottom: 1px solid #333; padding-bottom: 5px;">
+                            STRATEGY TICKET
+                        </div>
+                        {rows}
+                        <div style="text-align: right; margin-top: 15px; border-top: 1px solid #333; padding-top: 10px;">
+                            <h2 style="margin:0; color: #fff;">{cost_label}</h2>
+                            {be_html}
+                            <small style="color: #666;">*Excluding commissions</small>
                         </div>
                     </div>
-                    """, unsafe_allow_html=True)
+                    """
+                    
+                    # RENDER HTML SAFELY
+                    st.markdown(final_html, unsafe_allow_html=True)
                     
                     # --- PROBABILITY LAB ---
                     st.markdown("### 🧪 Probability Lab")
@@ -654,7 +692,7 @@ def page_terminal():
 # ==================================================
 with st.sidebar:
     st.title("OpStruct")
-    st.markdown("<small>v2.1.0 // Educational Build</small>", unsafe_allow_html=True)
+    st.markdown("<small>v2.2.0 // Educational Build</small>", unsafe_allow_html=True)
     st.markdown("---")
     
     if st.button("🏠 Home", use_container_width=True): set_page('home')
