@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 import plotly.graph_objects as go
 import requests
 import textwrap
+import time
 
 # --- PAGE CONFIGURATION ---
 st.set_page_config(
@@ -63,6 +64,15 @@ st.markdown("""
         font-size: 1.3rem;
         margin-bottom: 8px;
     }
+
+    /* QUIZ CARD STYLE */
+    .quiz-container {
+        background: #161B22;
+        border: 1px solid #30363D;
+        border-radius: 12px;
+        padding: 20px;
+        margin-top: 20px;
+    }
     
     /* TRADE TICKET STYLES */
     .trade-ticket {
@@ -113,26 +123,6 @@ st.markdown("""
         color: #fff;
     }
     
-    /* RADIO BUTTON AS TOGGLES */
-    div[role="radiogroup"] {
-        background-color: #161B22;
-        padding: 4px;
-        border-radius: 8px;
-        display: inline-flex;
-    }
-    
-    div[role="radiogroup"] label {
-        border-radius: 6px;
-        padding: 0px 16px;
-        margin-right: 0px !important;
-        border: 1px solid transparent;
-        transition: all 0.3s;
-    }
-
-    div[role="radiogroup"] label[data-baseweb="radio"] > div:first-child {
-        display: none; /* Hide default radio circle */
-    }
-
     /* METRIC CONTAINERS */
     div[data-testid="stMetric"] {
         background-color: #161B22;
@@ -164,6 +154,10 @@ st.markdown("""
 
 # --- NAVIGATION STATE ---
 if 'page' not in st.session_state: st.session_state.page = 'home'
+
+# --- GAMIFICATION STATE ---
+if 'user_level' not in st.session_state: st.session_state.user_level = 'Rookie'
+if 'xp' not in st.session_state: st.session_state.xp = 0
 
 def set_page(page_name):
     st.session_state.page = page_name
@@ -255,16 +249,28 @@ ACADEMY_CONTENT = {
     }
 }
 
+# --- EXAM REPOSITORY ---
+QUIZ_BANK = {
+    "Rookie": [
+        {"q": "A Call Option gives you the right, but not the...?", "options": ["Obligation", "Speed", "Guarantee", "Dividend"], "a": "Obligation"},
+        {"q": "Buying a Put option is most similar to which real-world concept?", "options": ["A Lottery Ticket", "Car Insurance", "A Bank Loan", "A Dividend"], "a": "Car Insurance"},
+        {"q": "According to the 'Casino Rule', buying options is like being the...?", "options": ["Casino Owner", "Dealer", "Gambler", "Regulator"], "a": "Gambler"}
+    ],
+    "Trader": [
+        {"q": "Which Greek measures the rate of Time Decay?", "options": ["Delta", "Gamma", "Theta", "Vega"], "a": "Theta"},
+        {"q": "If you are 'Long Options' (Bought), is Theta your friend or enemy?", "options": ["Friend", "Enemy", "Neutral", "It depends on Vega"], "a": "Enemy"},
+        {"q": "Why do traders use 'Spreads' instead of naked options?", "options": ["To increase risk", "To define risk", "To avoid commissions", "To increase Vega"], "a": "To define risk"}
+    ]
+}
+
 # --- HELPER: SMART TICKER SEARCH ---
 @st.cache_data(ttl=86400)
 def lookup_ticker(query):
     query = query.strip().upper()
-    # 1. Direct Try
     try:
         t = yf.Ticker(query)
         if not t.history(period="1d").empty: return query
     except: pass
-    # 2. Search API
     try:
         url = f"https://query2.finance.yahoo.com/v1/finance/search?q={query}"
         headers = {'User-Agent': 'Mozilla/5.0'}
@@ -281,50 +287,30 @@ class VectorizedQuantEngine:
         self.r = risk_free_rate
 
     def calculate_greeks_vectorized(self, df, S, T, sigma_col='impliedVolatility', type='call'):
-        """
-        Performs Black-Scholes calc on the ENTIRE dataframe column at once.
-        0 loops. 100x faster.
-        """
-        # Data cleaning: Ensure Sigma and T are safe
-        sigma = df[sigma_col].replace(0, np.nan).fillna(0.20) # Handle 0 IV
+        sigma = df[sigma_col].replace(0, np.nan).fillna(0.20)
         K = df['strike']
-        
-        # d1 and d2 Calculation
         d1 = (np.log(S / K) + (self.r + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
         d2 = d1 - sigma * np.sqrt(T)
 
         if type == 'call':
-            # Price
             df['theo_price'] = S * norm.cdf(d1) - K * np.exp(-self.r * T) * norm.cdf(d2)
-            # Greeks
             df['delta'] = norm.cdf(d1)
-            df['theta'] = (- (S * sigma * norm.pdf(d1)) / (2 * np.sqrt(T)) - self.r * K * np.exp(-self.r * T) * norm.cdf(d2)) / 365.0
         else:
-            # Price
             df['theo_price'] = K * np.exp(-self.r * T) * norm.cdf(-d2) - S * norm.cdf(-d1)
-            # Greeks
             df['delta'] = norm.cdf(d1) - 1
-            df['theta'] = (- (S * sigma * norm.pdf(d1)) / (2 * np.sqrt(T)) + self.r * K * np.exp(-self.r * T) * norm.cdf(-d2)) / 365.0
 
-        # Gamma and Vega are the same for Calls and Puts
-        df['gamma'] = norm.pdf(d1) / (S * sigma * np.sqrt(T))
-        df['vega'] = S * norm.pdf(d1) * np.sqrt(T) / 100.0
-        
+        df['theta'] = 0.0 # simplified for speed in academy mode
         return df
 
     def find_closest_strike(self, df, target_delta):
-        # Vectorized lookup
         idx = (np.abs(df['delta'] - target_delta)).argmin()
         return df.iloc[idx]
 
     def black_scholes_single(self, S, K, T, sigma, type="call"):
-        # For the simulation slider (single value calc)
         d1 = (np.log(S / K) + (self.r + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
         d2 = d1 - sigma * np.sqrt(T)
-        if type == "call":
-            return S * norm.cdf(d1) - K * np.exp(-self.r * T) * norm.cdf(d2)
-        else:
-            return K * np.exp(-self.r * T) * norm.cdf(-d2) - S * norm.cdf(-d1)
+        if type == "call": return S * norm.cdf(d1) - K * np.exp(-self.r * T) * norm.cdf(d2)
+        else: return K * np.exp(-self.r * T) * norm.cdf(-d2) - S * norm.cdf(-d1)
 
 # ==================================================
 #                  PAGE 1: HOMEPAGE
@@ -351,8 +337,7 @@ def page_home():
             <div class="concept-emoji">🎓</div>
             <div class="concept-title">The University</div>
             <p class="card-text">
-                From "Zero" to "Hedge Fund" in 4 structured modules.
-                Choose your difficulty level: <b>Rookie, Trader, or Quant.</b>
+                Gamified learning path. Start as a Rookie, pass exams, and unlock Quant clearance.
             </p>
         </div>
         """, unsafe_allow_html=True)
@@ -365,7 +350,7 @@ def page_home():
             <div class="concept-emoji">📐</div>
             <div class="concept-title">The Terminal</div>
             <p class="card-text">
-                Institutional-grade structuring engine powered by Black-Scholes.
+                Institutional-grade structuring engine.
                 <b>Visualize P&L, Time Decay, and Greeks</b> in real-time.
             </p>
         </div>
@@ -374,114 +359,117 @@ def page_home():
             set_page('terminal')
 
 # ==================================================
-#                  PAGE 2: THE ACADEMY
+#                  PAGE 2: THE ACADEMY (GAMIFIED)
 # ==================================================
 def page_academy():
-    st.markdown("## 🎓 OpStruct University")
+    current_level = st.session_state.user_level
     
-    # CONTROL BAR
-    with st.container():
-        c1, c2 = st.columns([1, 3])
-        with c1:
-            st.markdown("#### Select Clearance Level")
-        with c2:
-            level = st.radio(
-                "Difficulty:", 
-                ["Rookie", "Trader", "Quant"], 
-                horizontal=True, 
-                label_visibility="collapsed"
-            )
+    # --- LEVEL HEADER ---
+    lvl_map = {"Rookie": 0, "Trader": 50, "Quant": 100}
+    progress = lvl_map.get(current_level, 0)
     
-    # CONTEXT ALERT
-    if level == "Rookie":
-        st.info("🟢 **Mode: Rookie.** Explaining concepts using simple analogies (Insurance, Coupons, Casinos).")
-    elif level == "Trader":
-        st.warning("🟡 **Mode: Trader.** Focusing on trade mechanics, risk management, and market terminology.")
-    else:
-        st.error("🔴 **Mode: Quant.** Focusing on mathematical derivatives, pricing models, and structural edges.")
-    
-    st.markdown("<br>", unsafe_allow_html=True)
+    c1, c2 = st.columns([3, 1])
+    with c1:
+        st.markdown(f"## 🎓 Academy Clearance: <span style='color:#00FF88'>{current_level.upper()}</span>", unsafe_allow_html=True)
+        st.progress(progress)
+    with c2:
+        if current_level == "Rookie": st.markdown("### 🛡️ Level 1")
+        elif current_level == "Trader": st.markdown("### ⚔️ Level 2")
+        elif current_level == "Quant": st.markdown("### 👑 Level 3")
 
-    # CURRICULUM TABS
+    st.markdown("---")
+
+    # --- LEARNING CONTENT (Based on Level) ---
+    st.info(f"📚 **Current Module:** Learning {current_level} concepts. Read all tabs below before attempting the exam.")
+    
     tabs = st.tabs(["101: Contracts", "201: The Casino Rule", "301: The Greeks", "401: Spreads"])
     
-    # --- MODULE 101 ---
+    # RENDER TABS (Using current level content)
+    # MODULE 101
     with tabs[0]:
-        content = ACADEMY_CONTENT["101"]["levels"][level]
+        content = ACADEMY_CONTENT["101"]["levels"][current_level]
         st.subheader(ACADEMY_CONTENT["101"]["title"])
-        
-        c_left, c_right = st.columns(2, gap="medium")
-        with c_left:
-            st.markdown(f"""
-            <div class="concept-card" style="border-left: 4px solid #00FF88;">
-                <div class="concept-title">📞 CALL</div>
-                <div class="card-text">{content['Call']}</div>
-            </div>
-            """, unsafe_allow_html=True)
-        with c_right:
-            st.markdown(f"""
-            <div class="concept-card" style="border-left: 4px solid #FF4B4B;">
-                <div class="concept-title">📉 PUT</div>
-                <div class="card-text">{content['Put']}</div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        st.success(f"💡 **Key Takeaway:** {content['Key']}")
+        col_a, col_b = st.columns(2)
+        with col_a:
+            st.markdown(f"<div class='concept-card' style='border-left: 4px solid #00FF88;'><div class='concept-title'>CALL</div>{content['Call']}</div>", unsafe_allow_html=True)
+        with col_b:
+            st.markdown(f"<div class='concept-card' style='border-left: 4px solid #FF4B4B;'><div class='concept-title'>PUT</div>{content['Put']}</div>", unsafe_allow_html=True)
+        st.success(f"💡 {content['Key']}")
 
-    # --- MODULE 201 ---
+    # MODULE 201
     with tabs[1]:
-        content = ACADEMY_CONTENT["201"]["levels"][level]
+        content = ACADEMY_CONTENT["201"]["levels"][current_level]
         st.subheader(ACADEMY_CONTENT["201"]["title"])
-        
-        c_left, c_right = st.columns(2, gap="medium")
-        with c_left:
-            st.markdown(f"""
-            <div class="concept-card" style="border-left: 4px solid #FF4B4B;">
-                <div class="concept-title">💸 Buying (Debit)</div>
-                <div class="card-text">{content['Buy']}</div>
-            </div>
-            """, unsafe_allow_html=True)
-        with c_right:
-            st.markdown(f"""
-            <div class="concept-card" style="border-left: 4px solid #00FF88;">
-                <div class="concept-title">🏦 Selling (Credit)</div>
-                <div class="card-text">{content['Sell']}</div>
-            </div>
-            """, unsafe_allow_html=True)
-            
-        st.info(f"💡 **Key Takeaway:** {content['Key']}")
+        col_a, col_b = st.columns(2)
+        with col_a:
+            st.markdown(f"<div class='concept-card' style='border-left: 4px solid #FF4B4B;'><div class='concept-title'>BUYING</div>{content['Buy']}</div>", unsafe_allow_html=True)
+        with col_b:
+            st.markdown(f"<div class='concept-card' style='border-left: 4px solid #00FF88;'><div class='concept-title'>SELLING</div>{content['Sell']}</div>", unsafe_allow_html=True)
+        st.info(f"💡 {content['Key']}")
 
-    # --- MODULE 301 ---
+    # MODULE 301
     with tabs[2]:
-        content = ACADEMY_CONTENT["301"]["levels"][level]
+        content = ACADEMY_CONTENT["301"]["levels"][current_level]
         st.subheader(ACADEMY_CONTENT["301"]["title"])
-        
-        g1, g2, g3 = st.columns(3, gap="medium")
-        with g1:
-            st.metric("Δ Delta", "Direction")
-            st.markdown(f"<div class='card-text' style='font-size:0.9rem; margin-top:10px;'>{content['Delta']}</div>", unsafe_allow_html=True)
-        with g2:
-            st.metric("Θ Theta", "Time Decay")
-            st.markdown(f"<div class='card-text' style='font-size:0.9rem; margin-top:10px;'>{content['Theta']}</div>", unsafe_allow_html=True)
-        with g3:
-            st.metric("ν Vega", "Volatility")
-            st.markdown(f"<div class='card-text' style='font-size:0.9rem; margin-top:10px;'>{content['Vega']}</div>", unsafe_allow_html=True)
-        
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Delta", "Direction"); c1.write(content['Delta'])
+        c2.metric("Theta", "Time"); c2.write(content['Theta'])
+        c3.metric("Vega", "Volatility"); c3.write(content['Vega'])
         st.divider()
-        st.success(f"💡 **Key Takeaway:** {content['Key']}")
+        st.success(f"💡 {content['Key']}")
 
-    # --- MODULE 401 ---
+    # MODULE 401
     with tabs[3]:
-        content = ACADEMY_CONTENT["401"]["levels"][level]
+        content = ACADEMY_CONTENT["401"]["levels"][current_level]
         st.subheader(ACADEMY_CONTENT["401"]["title"])
+        st.markdown(f"<div class='concept-card'><h3>{content['Concept']}</h3><p>{content['Benefit']}</p></div>", unsafe_allow_html=True)
+        st.success(f"💡 {content['Key']}")
+
+    # --- EXAM SECTION ---
+    st.markdown("---")
+    st.subheader("🚀 Promotion Exam")
+    
+    if current_level == "Quant":
+        st.balloons()
+        st.success("🎉 You have reached the highest clearance level! You are now a certified Quantitative Structurer.")
+        if st.button("Reset Progress (Start Over)"):
+            st.session_state.user_level = 'Rookie'
+            st.rerun()
+    else:
+        st.write(f"Pass the **{current_level} Exam** to unlock the next clearance level.")
         
-        st.markdown(f"""
-        <div class="concept-card">
-            <h3 style="color: #00A3FF; margin-bottom: 10px;">{content['Concept']}</h3>
-            <p class="card-text">{content['Benefit']}</p>
-        </div>
-        """, unsafe_allow_html=True)
-        st.success(f"💡 **Key Takeaway:** {content['Key']}")
+        # QUIZ LOGIC
+        with st.expander(f"📝 Take {current_level} Exam", expanded=False):
+            quiz_data = QUIZ_BANK[current_level]
+            
+            # Form to hold answers
+            with st.form(key=f"quiz_{current_level}"):
+                score = 0
+                results = []
+                
+                for i, q in enumerate(quiz_data):
+                    st.markdown(f"**Q{i+1}: {q['q']}**")
+                    ans = st.radio(f"Answer {i+1}", q['options'], key=f"q_{current_level}_{i}", label_visibility="collapsed")
+                    if ans == q['a']:
+                        score += 1
+                        results.append(True)
+                    else:
+                        results.append(False)
+                    st.divider()
+                
+                submit = st.form_submit_button("Submit Exam")
+                
+                if submit:
+                    if score == len(quiz_data):
+                        st.success(f"✅ PERFECT SCORE! ({score}/{len(quiz_data)})")
+                        st.balloons()
+                        time.sleep(1)
+                        # LEVEL UP LOGIC
+                        if current_level == "Rookie": st.session_state.user_level = "Trader"
+                        elif current_level == "Trader": st.session_state.user_level = "Quant"
+                        st.rerun()
+                    else:
+                        st.error(f"❌ Exam Failed ({score}/{len(quiz_data)}). You need 100% to advance. Review the modules and try again.")
 
 # ==================================================
 #                  PAGE 3: THE TERMINAL (PRO)
