@@ -17,7 +17,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- ADVANCED CSS STYLING ---
+# --- MOBILE-OPTIMIZED CSS STYLING ---
 st.markdown("""
 <style>
     /* GLOBAL THEME */
@@ -36,6 +36,16 @@ st.markdown("""
     h1, h2, h3 {
         font-weight: 600;
         letter-spacing: -0.5px;
+    }
+
+    /* HERO TITLE CLASS (For Responsive Sizing) */
+    .hero-title {
+        font-size: 4.5rem;
+        background: -webkit-linear-gradient(45deg, #00FF88, #00A3FF);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        margin-bottom: 0;
+        line-height: 1.1;
     }
     
     /* TERMINAL FONT FOR NUMBERS */
@@ -103,9 +113,10 @@ st.markdown("""
         border-bottom: 1px solid #2a2e35;
         font-family: 'JetBrains Mono', monospace;
         font-size: 0.95rem;
+        flex-wrap: wrap; /* Allows wrapping on very small screens */
     }
-    .leg-buy { color: #00FF88; background: rgba(0, 255, 136, 0.1); padding: 2px 6px; border-radius: 4px; }
-    .leg-sell { color: #FF4B4B; background: rgba(255, 75, 75, 0.1); padding: 2px 6px; border-radius: 4px; }
+    .leg-buy { color: #00FF88; background: rgba(0, 255, 136, 0.1); padding: 2px 6px; border-radius: 4px; white-space: nowrap; }
+    .leg-sell { color: #FF4B4B; background: rgba(255, 75, 75, 0.1); padding: 2px 6px; border-radius: 4px; white-space: nowrap; }
     
     .ticket-footer {
         margin-top: 20px;
@@ -148,6 +159,30 @@ st.markdown("""
     /* DIVIDERS */
     hr {
         border-color: #30363D;
+    }
+
+    /* --- MOBILE SPECIFIC OVERRIDES --- */
+    @media only screen and (max-width: 600px) {
+        .hero-title {
+            font-size: 2.8rem !important;
+        }
+        .concept-card, .trade-ticket {
+            padding: 16px !important;
+        }
+        .cost-val {
+            font-size: 1.4rem !important;
+        }
+        .leg-row {
+            font-size: 0.85rem !important;
+        }
+        div[data-testid="stMetric"] {
+            padding: 10px !important;
+            margin-bottom: 10px !important;
+        }
+        /* Hide extra whitespace on mobile */
+        div.block-container {
+            padding-top: 2rem !important;
+        }
     }
 </style>
 """, unsafe_allow_html=True)
@@ -316,11 +351,11 @@ class VectorizedQuantEngine:
 #                  PAGE 1: HOMEPAGE
 # ==================================================
 def page_home():
-    st.markdown("<br><br>", unsafe_allow_html=True)
+    st.markdown("<br>", unsafe_allow_html=True)
     st.markdown(
         """
         <div style="text-align: center;">
-            <h1 style="font-size: 4.5rem; background: -webkit-linear-gradient(45deg, #00FF88, #00A3FF); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 0;">OpStruct.</h1>
+            <h1 class="hero-title">OpStruct.</h1>
             <h3 style="color: #8899A6; font-weight: 400; margin-top: 10px;">Master the Mathematics of Risk.</h3>
         </div>
         """, 
@@ -604,8 +639,6 @@ def page_terminal():
         data = st.session_state['terminal_data']
         
         # ROBOTIC FIX: Detect Legacy/Stale Session State
-        # The previous version did not store 'calls'/'puts' DataFrames.
-        # If we detect the old format, we must clear state and prompt a re-run.
         if 'calls' not in data or data['calls'] is None:
             st.warning("⚠️ Terminal data structure updated. Please click 'Initialize Terminal' again to load new charts.")
             del st.session_state['terminal_data']
@@ -644,7 +677,8 @@ def page_terminal():
                 title="IV Skew (Puts vs Calls)",
                 yaxis_title="Implied Volatility %", xaxis_title="Strike Price",
                 paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-                margin=dict(l=20, r=20, t=40, b=20)
+                margin=dict(l=10, r=10, t=30, b=10), # Mobile Optimized Margins
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
             )
             st.plotly_chart(skew_fig, use_container_width=True)
 
@@ -728,8 +762,9 @@ def page_terminal():
                 
                 fig.update_layout(
                     template="plotly_dark", height=350,
-                    margin=dict(l=20, r=20, t=30, b=20),
-                    paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)'
+                    margin=dict(l=10, r=10, t=30, b=20), # Mobile Optimized Margins
+                    paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
                 )
                 st.plotly_chart(fig, use_container_width=True)
 
@@ -738,7 +773,7 @@ def page_terminal():
 # ==================================================
 with st.sidebar:
     st.title("OpStruct")
-    st.markdown("<small>v2.2.0 // Educational Build</small>", unsafe_allow_html=True)
+    st.markdown("<small>v2.3.0 // Mobile Optimized</small>", unsafe_allow_html=True)
     st.markdown("---")
     
     if st.button("🏠 Home", use_container_width=True): set_page('home')
