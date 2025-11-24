@@ -6,6 +6,7 @@ from scipy.stats import norm
 from datetime import datetime, timedelta
 import plotly.graph_objects as go
 import requests
+import textwrap
 
 # --- PAGE CONFIGURATION ---
 st.set_page_config(
@@ -65,20 +66,52 @@ st.markdown("""
     
     /* TRADE TICKET STYLES */
     .trade-ticket {
-        background: #111; 
+        background: #151920; 
         border: 1px solid #333; 
-        border-radius: 8px; 
-        padding: 20px;
-        font-family: 'JetBrains Mono', monospace;
+        border-radius: 12px; 
+        padding: 24px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        font-family: 'Inter', sans-serif;
+    }
+    .ticket-header {
+        font-size: 0.85rem;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        color: #888;
+        border-bottom: 1px solid #333;
+        padding-bottom: 10px;
+        margin-bottom: 15px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
     }
     .leg-row {
         display: flex; 
-        justify-content: space-between; 
-        padding: 8px 0; 
-        border-bottom: 1px solid #222;
+        justify-content: space-between;
+        align-items: center;
+        padding: 12px 0; 
+        border-bottom: 1px solid #2a2e35;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.95rem;
     }
-    .leg-buy { color: #00FF88; }
-    .leg-sell { color: #FF4B4B; }
+    .leg-buy { color: #00FF88; background: rgba(0, 255, 136, 0.1); padding: 2px 6px; border-radius: 4px; }
+    .leg-sell { color: #FF4B4B; background: rgba(255, 75, 75, 0.1); padding: 2px 6px; border-radius: 4px; }
+    
+    .ticket-footer {
+        margin-top: 20px;
+        padding-top: 15px;
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-end;
+    }
+    .cost-display {
+        text-align: right;
+    }
+    .cost-val {
+        font-size: 1.8rem;
+        font-weight: 700;
+        color: #fff;
+    }
     
     /* RADIO BUTTON AS TOGGLES */
     div[role="radiogroup"] {
@@ -553,7 +586,7 @@ def page_terminal():
                     st.subheader(f"🤖 Algo Recommendation: {trade['Type']}")
                     total_price = 0
                     
-                    # Construct Visual Card using safe HTML construction
+                    # Construct Visual Card
                     rows = ""
                     for leg in trade['Legs']:
                         price = leg['lastPrice']
@@ -563,18 +596,13 @@ def page_terminal():
                         
                         css_class = "leg-buy" if side == "BUY" else "leg-sell"
                         
-                        # We build rows here
-                        rows += f"""
-                        <div class="leg-row">
-                            <span class="mono"><b class="{css_class}">{side}</b> {leg['strike']} {leg['type'].upper()}</span>
-                            <span class="mono" style="color: #888;">Δ {leg['calc_delta']:.2f} | ${price:.2f}</span>
-                        </div>
-                        """
+                        # IMPORTANT: Removing all indentation from HTML strings to prevent code-block rendering
+                        rows += f"""<div class="leg-row"><span class="mono"><b class="{css_class}">{side}</b> {leg['strike']} {leg['type'].upper()}</span><span class="mono" style="color: #888;">Δ {leg['calc_delta']:.2f} | ${price:.2f}</span></div>"""
 
                     net_cost = total_price * 100
                     cost_label = f"Net Debit: ${net_cost:.2f}" if total_price > 0 else f"Net Credit: ${abs(net_cost):.2f}"
                     
-                    # Calculate Breakevens (Rough estimate)
+                    # Calculate Breakevens
                     be_html = ""
                     if trade['Type'] == "Call Debit Spread":
                         be = trade['Legs'][0]['strike'] + total_price
@@ -583,22 +611,28 @@ def page_terminal():
                         be = trade['Legs'][0]['strike'] - total_price
                         be_html = f"<div class='mono' style='margin-top:8px; color:#aaa;'>Breakeven: ${be:.2f}</div>"
                     
+                    # TICKET ASSEMBLY (Using textwrap.dedent to ensure HTML is rendered, NOT code blocks)
                     final_html = f"""
                     <div class="trade-ticket">
-                        <div style="margin-bottom: 10px; color: #fff; font-weight: bold; border-bottom: 1px solid #333; padding-bottom: 5px;">
-                            STRATEGY TICKET
+                        <div class="ticket-header">
+                            <span>Strategy Ticket</span>
+                            <span>{trade['Type'].upper()}</span>
                         </div>
                         {rows}
-                        <div style="text-align: right; margin-top: 15px; border-top: 1px solid #333; padding-top: 10px;">
-                            <h2 style="margin:0; color: #fff;">{cost_label}</h2>
-                            {be_html}
-                            <small style="color: #666;">*Excluding commissions</small>
+                        <div class="ticket-footer">
+                            <div style="font-size: 0.8rem; color: #666; width: 50%;">
+                                *Estimates based on mid-market prices.
+                            </div>
+                            <div class="cost-display">
+                                <div class="cost-val">{cost_label}</div>
+                                {be_html}
+                            </div>
                         </div>
                     </div>
                     """
                     
-                    # RENDER HTML SAFELY
-                    st.markdown(final_html, unsafe_allow_html=True)
+                    # RENDER HTML SAFELY (Strip indentation)
+                    st.markdown(textwrap.dedent(final_html), unsafe_allow_html=True)
                     
                     # --- PROBABILITY LAB ---
                     st.markdown("### 🧪 Probability Lab")
