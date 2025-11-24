@@ -368,6 +368,23 @@ def page_terminal():
             fig.update_layout(template="plotly_dark", height=350, margin=dict(l=10, r=10, t=30, b=20), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', showlegend=False, xaxis_title="Stock Price at T+" + str(days_fwd), yaxis_title="P&L ($)")
             st.plotly_chart(fig, use_container_width=True)
 
+            # --- ADDED EXPLANATION MODULE ---
+            with st.expander("📊 How to Read This Simulation", expanded=False):
+                st.markdown("""
+                **This is not a standard expiration graph.** Standard charts only show the destination; this shows the *journey*.
+                
+                * **The White Curve (Mark-to-Market):** The value of your trade *at the selected time*. It curves because of Gamma.
+                * **Green/Red Zones:** Your Profit vs. Loss. The transition point is your **Breakeven**.
+                
+                **🕹️ The Simulators:**
+                * **⏳ Days Forward (Theta):** Simulates **Time Decay**.
+                    * *Buying Options:* Watch the curve sink (you bleed value).
+                    * *Selling Options:* Watch the curve rise (you collect rent).
+                * **⚡ IV Shock (Vega):** Simulates **Panic**.
+                    * *+20%: * Market crash or Earnings. Long options inflate, Short options crash.
+                    * *-20%: * Volatility Crush. The market gets boring.
+                """)
+
 with st.sidebar:
     st.title("OpStruct")
     st.caption("Institutional Grade v4.2")
