@@ -6,7 +6,6 @@ from scipy.stats import norm
 from datetime import datetime, timedelta
 import plotly.graph_objects as go
 import requests
-import time
 
 # --- PAGE CONFIG ---
 st.set_page_config(page_title="OpStruct Academy", page_icon="🎓", layout="wide")
@@ -25,10 +24,8 @@ st.markdown("""
     .concept-title {color: #00FF00; font-weight: bold; font-size: 1.2rem;}
     .concept-emoji {font-size: 2rem;}
     
-    /* NAVIGATION */
-    div.stButton > button {
-        width: 100%; border-radius: 8px; font-weight: bold;
-    }
+    /* ACADEMY LEVEL SELECTOR */
+    div.row-widget.stRadio > div {flex-direction: row;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -38,6 +35,93 @@ if 'page' not in st.session_state: st.session_state.page = 'home'
 def set_page(page_name):
     st.session_state.page = page_name
 
+# --- CONTENT DATABASE (THE CURRICULUM) ---
+ACADEMY_CONTENT = {
+    "101": {
+        "title": "101: The Contract",
+        "levels": {
+            "Rookie": {
+                "Call": "**The Coupon.** Imagine a coupon that lets you buy a TV for $500. If the TV price goes to $700, that coupon is worth $200. If the price drops to $400, the coupon is worthless, but you don't *have* to use it.",
+                "Put": "**Car Insurance.** You pay a premium to protect your car. If you crash (stock crashes), the insurance pays out. If you don't crash, the insurance company keeps your premium.",
+                "Key": "Options are rights, not obligations."
+            },
+            "Trader": {
+                "Call": "**Leveraged Bullish Bet.** A standard contract controlling 100 shares. Buying a Call gives you positive Delta. You need the stock to move UP fast enough to beat Theta (time decay).",
+                "Put": "**Leveraged Bearish Bet.** Controls 100 shares short. Buying a Put gives you negative Delta. Used for speculation (betting on a crash) or hedging (protecting a portfolio).",
+                "Key": "1 Option Contract = 100 Shares. Use this leverage carefully."
+            },
+            "Quant": {
+                "Call": "A derivative instrument offering convex exposure. The payoff function is `max(S - K, 0)`. As spot price `S` increases, Delta approaches 1.0.",
+                "Put": "A hedge against tail risk. The payoff function is `max(K - S, 0)`. Puts typically trade at a higher implied volatility than Calls due to 'Skew' (fear is stronger than greed).",
+                "Key": "Payoff structures are non-linear."
+            }
+        }
+    },
+    "201": {
+        "title": "201: The Casino Rule",
+        "levels": {
+            "Rookie": {
+                "Buy": "**Buying Lottery Tickets.** Low chance of winning, but if you win, you win big. Most tickets end up in the trash.",
+                "Sell": "**Being the Casino.** You sell the tickets. You win small amounts very often (keeping the ticket price), but occasionally you have to pay out a jackpot.",
+                "Key": "Casinos make more money than gamblers."
+            },
+            "Trader": {
+                "Buy": "**Long Volatility.** Defined Risk / Unlimited Reward. Low Probability of Profit (POP). You need a big move to profit.",
+                "Sell": "**Short Volatility.** Unlimited Risk / Defined Reward. High Probability of Profit (POP). You profit if the stock stays flat, goes your way, or moves slightly against you.",
+                "Key": "Professional traders often SELL options to harvest premium."
+            },
+            "Quant": {
+                "Buy": "Purchasing Gamma. You are betting that realized volatility will exceed implied volatility. You suffer from negative Theta (time decay).",
+                "Sell": "Selling Variance Risk Premium (VRP). Historically, Implied Volatility is overstated compared to Realized Volatility. Selling captures this spread.",
+                "Key": "VRP is a structural edge in the market."
+            }
+        }
+    },
+    "301": {
+        "title": "301: The Greeks",
+        "levels": {
+            "Rookie": {
+                "Delta": "**Speed.** How much your option price changes for every $1 the stock moves.",
+                "Theta": "**Time Tax.** How much value your option loses every single day just by existing (ice cube melting).",
+                "Vega": "**Panic.** How much the price rises when people get scared (volatility goes up).",
+                "Key": "Greeks tell you 'Why' you made or lost money."
+            },
+            "Trader": {
+                "Delta": "**Directional Exposure.** Also serves as a rough proxy for Probability ITM (e.g., 30 Delta = ~30% chance of expiring ITM).",
+                "Theta": "**Daily Bill.** If you are Long Options, you pay Theta. If you are Short Options, you collect Theta.",
+                "Vega": "**Volatility Exposure.** In high IV rank, options are expensive (Short Vega strategies preferred). In low IV rank, options are cheap (Long Vega strategies preferred).",
+                "Key": "Manage your Greeks to manage your risk."
+            },
+            "Quant": {
+                "Delta": "First derivative of Price w.r.t Underlying ($dS$). $\\frac{\\partial V}{\\partial S}$",
+                "Theta": "First derivative of Price w.r.t Time ($dt$). $\\frac{\\partial V}{\\partial t}$",
+                "Vega": "First derivative of Price w.r.t Volatility ($d\\sigma$). $\\frac{\\partial V}{\\partial \\sigma}$",
+                "Key": "Sensitivity analysis using partial derivatives of the Black-Scholes equation."
+            }
+        }
+    },
+    "401": {
+        "title": "401: Spreads",
+        "levels": {
+            "Rookie": {
+                "Concept": "**The Combo Meal.** Instead of just buying a burger (Call), you buy a burger and sell a drink. It lowers the cost, but caps how much food you get.",
+                "Benefit": "It stops you from losing your shirt. You know exactly how much you can make or lose before you start.",
+                "Key": "Spreads make trading safer and cheaper."
+            },
+            "Trader": {
+                "Concept": "**Vertical Spreads.** Buying one strike and selling another in the same expiration. Reduces cost basis and neutralizes volatility risk.",
+                "Benefit": "Defined Risk. A 'Debit Spread' is a cheaper directional bet. A 'Credit Spread' allows you to be the casino with a safety net.",
+                "Key": "Most sustainable retail strategies rely on spreads, not naked calls/puts."
+            },
+            "Quant": {
+                "Concept": "**Isolating Factors.** Spreads allow you to isolate specific Greeks. A 'Calendar Spread' isolates Theta/Vega while neutralizing Delta. A 'Vertical' isolates Delta while neutralizing Vega.",
+                "Benefit": "Capital Efficiency. Spreads drastically reduce margin requirements compared to naked positions.",
+                "Key": "Structuring allows for precision engineering of the P&L curve."
+            }
+        }
+    }
+}
+
 # --- HELPER: SMART SEARCH ---
 @st.cache_data(ttl=86400)
 def lookup_ticker(query):
@@ -46,7 +130,6 @@ def lookup_ticker(query):
         t = yf.Ticker(query)
         if not t.history(period="1d").empty: return query
     except: pass
-
     try:
         url = f"https://query2.finance.yahoo.com/v1/finance/search?q={query}"
         headers = {'User-Agent': 'Mozilla/5.0'}
@@ -73,7 +156,10 @@ def page_home():
         <div class="concept-card">
             <div class="concept-emoji">🎓</div>
             <div class="concept-title">The University</div>
-            <p>From "Zero" to "Hedge Fund" in 4 modules. Learn the logic, not just the definitions.</p>
+            <div style="margin-top: 10px; color: #aaa;">
+                From "Zero" to "Hedge Fund" in 4 modules.<br>
+                Choose your difficulty: Rookie, Trader, or Quant.
+            </div>
         </div>
         """, unsafe_allow_html=True)
         if st.button("Enter University ->", key="home_academy"): set_page('academy')
@@ -83,7 +169,10 @@ def page_home():
         <div class="concept-card">
             <div class="concept-emoji">📐</div>
             <div class="concept-title">The Terminal</div>
-            <p>Institutional-grade structuring engine powered by Black-Scholes.</p>
+            <div style="margin-top: 10px; color: #aaa;">
+                Institutional-grade structuring engine.<br>
+                Visualize Greeks, Time Decay, and P&L.
+            </div>
         </div>
         """, unsafe_allow_html=True)
         if st.button("Launch Terminal ->", key="home_terminal"): set_page('terminal')
@@ -94,32 +183,75 @@ def page_home():
 def page_academy():
     st.title("🎓 OpStruct University")
     
-    tab1, tab2, tab3, tab4 = st.tabs(["101: The Contract", "201: The Casino Rule", "301: The Greeks", "401: Spreads"])
+    # LEVEL SELECTOR
+    st.markdown("### 🎚️ Select Your Clearance Level")
+    level = st.radio("Difficulty:", ["Rookie", "Trader", "Quant"], horizontal=True, label_visibility="collapsed")
     
-    with tab1:
-        st.header("The Foundation")
-        c1, c2 = st.columns(2)
-        with c1:
-            st.info("📞 **CALL** = The Coupon (Betting UP)")
-            st.write("You pay $5 for the right to buy a TV at $500. If price hits $600, you profit.")
-        with c2:
-            st.info("📉 **PUT** = The Insurance (Betting DOWN)")
-            st.write("You pay $100 to insure your car. If it crashes (stock drops), you get paid.")
+    # DYNAMIC HEADER BASED ON LEVEL
+    if level == "Rookie":
+        st.caption("🟢 **Mode: Rookie.** Explaining concepts using analogies (Insurance, Coupons, Casinos).")
+    elif level == "Trader":
+        st.caption("🟡 **Mode: Trader.** Focusing on mechanics, risk management, and market terminology.")
+    else:
+        st.caption("🔴 **Mode: Quant.** Focusing on math, derivatives, and structural edges.")
+    
+    st.divider()
 
-    with tab2:
-        st.header("Buying vs Selling")
-        st.markdown("**Buying Options:** Limited Risk, Low Probability of Profit.\n\n**Selling Options:** High Probability of Profit, Unlimited Risk (unless hedged).")
-        st.warning("OpStruct uses **Spreads** (Buying + Selling) to get the best of both worlds.")
+    # TABS FOR MODULES
+    t1, t2, t3, t4 = st.tabs(["101: The Contract", "201: Casino Rule", "301: The Greeks", "401: Spreads"])
+    
+    # --- TAB 1: CONTRACTS ---
+    with t1:
+        content = ACADEMY_CONTENT["101"]["levels"][level]
+        st.header(ACADEMY_CONTENT["101"]["title"])
+        
+        col_a, col_b = st.columns(2)
+        with col_a:
+            st.info(f"📞 **CALL**\n\n{content['Call']}")
+        with col_b:
+            st.warning(f"📉 **PUT**\n\n{content['Put']}")
+        
+        st.success(f"💡 **Takeaway:** {content['Key']}")
 
-    with tab3:
-        st.header("The Greeks")
-        st.metric("Δ Delta", "Probability", "Direction")
-        st.metric("Θ Theta", "Time Decay", "Ice Cube Melting")
-        st.metric("ν Vega", "Volatility", "Panic Tax")
+    # --- TAB 2: BUY VS SELL ---
+    with t2:
+        content = ACADEMY_CONTENT["201"]["levels"][level]
+        st.header(ACADEMY_CONTENT["201"]["title"])
+        
+        col_a, col_b = st.columns(2)
+        with col_a:
+            st.error(f"💸 **Buying Options (Debit)**\n\n{content['Buy']}")
+        with col_b:
+            st.success(f"🏦 **Selling Options (Credit)**\n\n{content['Sell']}")
+            
+        st.info(f"💡 **Takeaway:** {content['Key']}")
 
-    with tab4:
-        st.header("Structuring")
-        st.success("By combining legs, we create 'Shapes' (Verticals, Condors) that define exactly how much we can make or lose.")
+    # --- TAB 3: GREEKS ---
+    with t3:
+        content = ACADEMY_CONTENT["301"]["levels"][level]
+        st.header(ACADEMY_CONTENT["301"]["title"])
+        
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Δ Delta", "Direction", help=content['Delta'])
+        c1.markdown(f"<small>{content['Delta']}</small>", unsafe_allow_html=True)
+        
+        c2.metric("Θ Theta", "Time", help=content['Theta'])
+        c2.markdown(f"<small>{content['Theta']}</small>", unsafe_allow_html=True)
+        
+        c3.metric("ν Vega", "Volatility", help=content['Vega'])
+        c3.markdown(f"<small>{content['Vega']}</small>", unsafe_allow_html=True)
+        
+        st.divider()
+        st.success(f"💡 **Takeaway:** {content['Key']}")
+
+    # --- TAB 4: SPREADS ---
+    with t4:
+        content = ACADEMY_CONTENT["401"]["levels"][level]
+        st.header(ACADEMY_CONTENT["401"]["title"])
+        
+        st.markdown(f"### {content['Concept']}")
+        st.write(content['Benefit'])
+        st.success(f"💡 **Takeaway:** {content['Key']}")
 
 # ==================================================
 #                 PAGE 3: THE TERMINAL (PRO)
@@ -301,7 +433,6 @@ def page_terminal():
                 fig.update_layout(template="plotly_dark", height=500, title="Projected Outcome", yaxis_title="P/L ($)")
                 st.plotly_chart(fig, use_container_width=True)
                 
-                # --- CHART DECODER (THE EXPLANATION) ---
                 with st.expander("🔍 How to read this chart (The 'Aha!' Moment)"):
                     st.markdown("""
                     This chart shows you the **Future**:
