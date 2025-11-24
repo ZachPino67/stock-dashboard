@@ -525,19 +525,13 @@ def page_terminal():
         with c2: expiry = st.selectbox("Expiration Date", exps[:12])
         with c3: view = st.selectbox("Market View / Strategy", ["Bullish (Call Debit Spread)", "Bearish (Put Debit Spread)", "Neutral (Income Strangle)"])
 
-        # EXECUTION
+        # EXECUTION: BUTTON TRIGGERS DATA FETCH & STORE
         if st.button("Run Quant Analysis", type="primary", use_container_width=True):
             with st.spinner(f"Pulling Option Chain & Calculating Greeks for {ticker}..."):
                 current_price = hist['Close'].iloc[-1]
                 curr_vol, iv_rank = get_iv_rank(stock)
                 
                 # --- MARKET DASHBOARD ---
-                st.markdown(f"#### 📊 {ticker} Market Data")
-                m1, m2, m3, m4 = st.columns(4)
-                m1.metric("Spot Price", f"${current_price:.2f}")
-                m2.metric("IV Rank (1Y)", f"{iv_rank:.0f}%")
-                m3.metric("Implied Vol", f"{curr_vol:.1f}%")
-                
                 regime_msg = "Neutral"
                 regime_color = "off"
                 if iv_rank > 50: 
@@ -546,10 +540,7 @@ def page_terminal():
                 elif iv_rank < 20: 
                     regime_msg = "LOW IV"
                     regime_color = "inverse"
-                m4.metric("Vol Regime", regime_msg, delta_color=regime_color)
                 
-                st.divider()
-
                 # --- GREEK CALCULATION ---
                 _, calls, puts = get_chain(ticker, expiry)
                 
@@ -580,142 +571,134 @@ def page_terminal():
                     call_leg['side'] = "SELL"; put_leg['side'] = "SELL"
                     call_leg['type'] = "call"; put_leg['type'] = "put"
                     trade = {"Legs": [call_leg, put_leg], "Type": "Short Strangle"}
-                
-                # --- TRADE VISUALIZER ---
-                if trade:
-                    st.subheader(f"🤖 Algo Recommendation: {trade['Type']}")
-                    total_price = 0
-                    
-                    # Construct Visual Card
-                    rows = ""
-                    for leg in trade['Legs']:
-                        price = leg['lastPrice']
-                        side = leg['side']
-                        if side == "BUY": total_price += price
-                        else: total_price -= price
-                        
-                        css_class = "leg-buy" if side == "BUY" else "leg-sell"
-                        
-                        # IMPORTANT: Removing all indentation from HTML strings to prevent code-block rendering
-                        rows += f"""<div class="leg-row"><span class="mono"><b class="{css_class}">{side}</b> {leg['strike']} {leg['type'].upper()}</span><span class="mono" style="color: #888;">Δ {leg['calc_delta']:.2f} | ${price:.2f}</span></div>"""
 
-                    net_cost = total_price * 100
-                    cost_label = f"Net Debit: ${net_cost:.2f}" if total_price > 0 else f"Net Credit: ${abs(net_cost):.2f}"
+                # --- STORE IN SESSION STATE (PERSISTENCE) ---
+                st.session_state['terminal_data'] = {
+                    "ticker": ticker,
+                    "current_price": current_price,
+                    "iv_rank": iv_rank,
+                    "curr_vol": curr_vol,
+                    "regime_msg": regime_msg,
+                    "regime_color": regime_color,
+                    "trade": trade,
+                    "dte": dte
+                }
+
+        # --- RENDERING (HAPPENS IF DATA EXISTS) ---
+        if 'terminal_data' in st.session_state:
+            data = st.session_state['terminal_data']
+            
+            # 1. DISPLAY MARKET DATA
+            st.markdown(f"#### 📊 {data['ticker']} Market Data")
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("Spot Price", f"${data['current_price']:.2f}")
+            m2.metric("IV Rank (1Y)", f"{data['iv_rank']:.0f}%")
+            m3.metric("Implied Vol", f"{data['curr_vol']:.1f}%")
+            m4.metric("Vol Regime", data['regime_msg'], delta_color=data['regime_color'])
+            
+            st.divider()
+
+            # 2. DISPLAY TRADE TICKET
+            trade = data['trade']
+            if trade:
+                st.subheader(f"🤖 Algo Recommendation: {trade['Type']}")
+                total_price = 0
+                
+                rows = ""
+                for leg in trade['Legs']:
+                    price = leg['lastPrice']
+                    side = leg['side']
+                    if side == "BUY": total_price += price
+                    else: total_price -= price
                     
-                    # Calculate Breakevens
-                    be_html = ""
-                    if trade['Type'] == "Call Debit Spread":
-                        be = trade['Legs'][0]['strike'] + total_price
-                        be_html = f"<div class='mono' style='margin-top:8px; color:#aaa;'>Breakeven: ${be:.2f}</div>"
-                    elif trade['Type'] == "Put Debit Spread":
-                        be = trade['Legs'][0]['strike'] - total_price
-                        be_html = f"<div class='mono' style='margin-top:8px; color:#aaa;'>Breakeven: ${be:.2f}</div>"
-                    
-                    # TICKET ASSEMBLY (Using textwrap.dedent to ensure HTML is rendered, NOT code blocks)
-                    final_html = f"""
-                    <div class="trade-ticket">
-                        <div class="ticket-header">
-                            <span>Strategy Ticket</span>
-                            <span>{trade['Type'].upper()}</span>
+                    css_class = "leg-buy" if side == "BUY" else "leg-sell"
+                    rows += f"""<div class="leg-row"><span class="mono"><b class="{css_class}">{side}</b> {leg['strike']} {leg['type'].upper()}</span><span class="mono" style="color: #888;">Δ {leg['calc_delta']:.2f} | ${price:.2f}</span></div>"""
+
+                net_cost = total_price * 100
+                cost_label = f"Net Debit: ${net_cost:.2f}" if total_price > 0 else f"Net Credit: ${abs(net_cost):.2f}"
+                
+                be_html = ""
+                if trade['Type'] == "Call Debit Spread":
+                    be = trade['Legs'][0]['strike'] + total_price
+                    be_html = f"<div class='mono' style='margin-top:8px; color:#aaa;'>Breakeven: ${be:.2f}</div>"
+                elif trade['Type'] == "Put Debit Spread":
+                    be = trade['Legs'][0]['strike'] - total_price
+                    be_html = f"<div class='mono' style='margin-top:8px; color:#aaa;'>Breakeven: ${be:.2f}</div>"
+                
+                final_html = f"""
+                <div class="trade-ticket">
+                    <div class="ticket-header">
+                        <span>Strategy Ticket</span>
+                        <span>{trade['Type'].upper()}</span>
+                    </div>
+                    {rows}
+                    <div class="ticket-footer">
+                        <div style="font-size: 0.8rem; color: #666; width: 50%;">
+                            *Estimates based on mid-market prices.
                         </div>
-                        {rows}
-                        <div class="ticket-footer">
-                            <div style="font-size: 0.8rem; color: #666; width: 50%;">
-                                *Estimates based on mid-market prices.
-                            </div>
-                            <div class="cost-display">
-                                <div class="cost-val">{cost_label}</div>
-                                {be_html}
-                            </div>
+                        <div class="cost-display">
+                            <div class="cost-val">{cost_label}</div>
+                            {be_html}
                         </div>
                     </div>
-                    """
-                    
-                    # RENDER HTML SAFELY (Strip indentation)
-                    st.markdown(textwrap.dedent(final_html), unsafe_allow_html=True)
-                    
-                    # --- PROBABILITY LAB ---
-                    st.markdown("### 🧪 Probability Lab")
-                    st.markdown("Simulate how **Time** and **Volatility** affect your P&L curve.")
-                    
-                    l1, l2 = st.columns(2)
-                    with l1: 
-                        slider_max = dte if dte > 0 else 1
-                        days_forward = st.slider("⏳ Time Travel (Days into Future)", 0, slider_max, 0)
-                    with l2: 
-                        vol_adjust = st.slider("⚡ Volatility Shock (%)", -50, 100, 0)
+                </div>
+                """
+                st.markdown(textwrap.dedent(final_html), unsafe_allow_html=True)
+                
+                # --- PROBABILITY LAB (INTERACTIVE) ---
+                st.markdown("### 🧪 Probability Lab")
+                st.markdown("Simulate how **Time** and **Volatility** affect your P&L curve.")
+                
+                # Sliders are OUTSIDE the button, so they trigger reruns that hit this block
+                l1, l2 = st.columns(2)
+                with l1: 
+                    slider_max = data['dte'] if data['dte'] > 0 else 1
+                    days_forward = st.slider("⏳ Time Travel (Days into Future)", 0, slider_max, 0)
+                with l2: 
+                    vol_adjust = st.slider("⚡ Volatility Shock (%)", -50, 100, 0)
 
-                    # P&L CALCULATION ENGINE
-                    spot_range = np.linspace(current_price * 0.7, current_price * 1.3, 200)
-                    
-                    # 1. Expiration Line (White Dotted)
-                    pnl_expiration = np.zeros_like(spot_range) - (total_price * 100)
-                    for leg in trade['Legs']:
-                        payoff = np.maximum(0, spot_range - leg['strike']) if leg['type'] == "call" else np.maximum(0, leg['strike'] - spot_range)
-                        pnl_expiration += (payoff * 100) if leg['side'] == "BUY" else -(payoff * 100)
+                # RE-CALCULATE CHART ON THE FLY
+                spot_range = np.linspace(data['current_price'] * 0.7, data['current_price'] * 1.3, 200)
+                
+                # Expiration P&L
+                pnl_expiration = np.zeros_like(spot_range) - (total_price * 100)
+                for leg in trade['Legs']:
+                    payoff = np.maximum(0, spot_range - leg['strike']) if leg['type'] == "call" else np.maximum(0, leg['strike'] - spot_range)
+                    pnl_expiration += (payoff * 100) if leg['side'] == "BUY" else -(payoff * 100)
 
-                    # 2. Simulated Line (Colored)
-                    pnl_simulated = np.zeros_like(spot_range) - (total_price * 100)
-                    sim_T = max(0.001, (dte - days_forward) / 365.0)
-                    for leg in trade['Legs']:
-                        # Shock the IV
-                        sim_sigma = max(0.01, leg['impliedVolatility'] * (1 + vol_adjust/100))
-                        
-                        # Re-price option using Black-Scholes
-                        if leg['type'] == "call":
-                            new_price = quant.black_scholes_call(spot_range, leg['strike'], sim_T, sim_sigma)
-                        else:
-                            new_price = quant.black_scholes_put(spot_range, leg['strike'], sim_T, sim_sigma)
-                            
-                        pnl_simulated += (new_price * 100) if leg['side'] == "BUY" else -(new_price * 100)
+                # Simulated P&L
+                pnl_simulated = np.zeros_like(spot_range) - (total_price * 100)
+                sim_T = max(0.001, (data['dte'] - days_forward) / 365.0)
+                for leg in trade['Legs']:
+                    sim_sigma = max(0.01, leg['impliedVolatility'] * (1 + vol_adjust/100))
+                    if leg['type'] == "call":
+                        new_price = quant.black_scholes_call(spot_range, leg['strike'], sim_T, sim_sigma)
+                    else:
+                        new_price = quant.black_scholes_put(spot_range, leg['strike'], sim_T, sim_sigma)
+                    pnl_simulated += (new_price * 100) if leg['side'] == "BUY" else -(new_price * 100)
 
-                    # PLOTLY CHART
-                    fig = go.Figure()
-                    
-                    # Expiration Trace
-                    fig.add_trace(go.Scatter(
-                        x=spot_range, y=pnl_expiration, 
-                        mode='lines', 
-                        name='At Expiration', 
-                        line=dict(color='white', dash='dot', width=1)
-                    ))
-                    
-                    # Current/Simulated Trace
-                    line_color = '#00FF88' if pnl_simulated.max() > 0 else '#FF4B4B'
-                    fig.add_trace(go.Scatter(
-                        x=spot_range, y=pnl_simulated, 
-                        mode='lines', 
-                        name=f'Simulated (T+{days_forward})', 
-                        fill='tozeroy', 
-                        line=dict(color=line_color, width=3)
-                    ))
-                    
-                    fig.add_hline(y=0, line_color="#555", line_width=1)
-                    fig.add_vline(x=current_price, line_color="#F4D03F", line_dash="dash", annotation_text="Spot Price")
-                    
-                    fig.update_layout(
-                        template="plotly_dark", 
-                        height=500, 
-                        title="P&L Simulation", 
-                        yaxis_title="Profit / Loss ($)",
-                        xaxis_title="Underlying Price",
-                        paper_bgcolor='rgba(0,0,0,0)',
-                        plot_bgcolor='rgba(0,0,0,0)',
-                        hovermode="x unified"
-                    )
-                    st.plotly_chart(fig, use_container_width=True)
-                    
-                    with st.expander("🔍 Decoder: How to read this chart"):
-                        st.markdown("""
-                        **The Visual Intuition:**
-                        
-                        1.  **Dotted White Line:** This is the *Hard Truth*. It is your P&L on the day of expiration. You cannot escape this math.
-                        2.  **Solid Colored Line:** This is your P&L *Right Now*. It is curvy because of **Time Value** and **Implied Volatility**.
-                        
-                        **Why do they look different?**
-                        * **Theta (Time):** As time passes (slide the Time Travel bar), the colored line will slowly collapse onto the white line.
-                        * **Vega (Volatility):** If volatility spikes (slide the Volatility Shock bar), the colored line will inflate like a balloon, expanding away from the white line.
-                        """)
+                # RENDER PLOTLY
+                fig = go.Figure()
+                fig.add_trace(go.Scatter(
+                    x=spot_range, y=pnl_expiration, 
+                    mode='lines', name='At Expiration', 
+                    line=dict(color='white', dash='dot', width=1)
+                ))
+                line_color = '#00FF88' if pnl_simulated.max() > 0 else '#FF4B4B'
+                fig.add_trace(go.Scatter(
+                    x=spot_range, y=pnl_simulated, 
+                    mode='lines', name=f'Simulated (T+{days_forward})', 
+                    fill='tozeroy', line=dict(color=line_color, width=3)
+                ))
+                fig.add_hline(y=0, line_color="#555", line_width=1)
+                fig.add_vline(x=data['current_price'], line_color="#F4D03F", line_dash="dash", annotation_text="Spot Price")
+                fig.update_layout(
+                    template="plotly_dark", height=500, title="P&L Simulation", 
+                    yaxis_title="Profit / Loss ($)", xaxis_title="Underlying Price",
+                    paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+                    hovermode="x unified"
+                )
+                st.plotly_chart(fig, use_container_width=True)
 
     except Exception as e:
         st.error(f"Analysis Error: {str(e)}")
