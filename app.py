@@ -259,7 +259,7 @@ def lookup_ticker(query):
     except: pass
     return query
 
-# --- EDUCATIONAL CONTENT (ABBREVIATED FOR BREVITY) ---
+# --- EDUCATIONAL CONTENT (FULL) ---
 ACADEMY_CONTENT = {
     "101": {
         "title": "Module 101: The Option Contract",
@@ -276,6 +276,22 @@ ACADEMY_CONTENT = {
             "Trader": {"Buy": "Long Vol (Debit).", "Sell": "Short Vol (Credit).", "Key": "Professionals sell Theta."},
             "Quant": {"Buy": "Long Gamma/Vega.", "Sell": "Harvest VRP (Variance Risk Premium).", "Key": "IV > RV systematically."}
         }
+    },
+    "301": {
+        "title": "Module 301: The Greeks",
+        "levels": {
+            "Rookie": {"Delta": "Speed/Direction.", "Theta": "Time Decay.", "Vega": "Panic.", "Key": "Greeks explain P&L movement."},
+            "Trader": {"Delta": "Probability ITM.", "Theta": "Daily Bill.", "Vega": "Vol Sensitivity.", "Key": "Sell Vega when high, Buy when low."},
+            "Quant": {"Delta": "d1 First Derivative.", "Theta": "Time Derivative.", "Vega": "Vol Derivative.", "Key": "Sensitivities of the BSM equation."}
+        }
+    },
+    "401": {
+        "title": "Module 401: Spreads",
+        "levels": {
+            "Rookie": {"Concept": "The Combo Meal.", "Benefit": "Cheaper & Safer.", "Key": "Don't bet the farm on one trade."},
+            "Trader": {"Concept": "Vertical Spreads.", "Benefit": "Defined Risk / Higher POP.", "Key": "Capped upside for sleep-at-night risk."},
+            "Quant": {"Concept": "Factor Isolation.", "Benefit": "Margin Efficiency.", "Key": "Isolating Delta while neutralizing Vega."}
+        }
     }
 }
 
@@ -287,6 +303,10 @@ QUIZ_BANK = {
     "Trader": [
         {"q": "Which Greek measures Time Decay?", "options": ["Delta", "Theta", "Vega"], "a": "Theta"},
         {"q": "If Long Options, Theta is...?", "options": ["Friend", "Enemy", "Neutral"], "a": "Enemy"},
+    ],
+    "Quant": [
+         {"q": "Positive Gamma implies your P&L curve is...?", "options": ["Convex", "Concave", "Linear"], "a": "Convex"},
+         {"q": "To isolate Delta and neutralize Vega, you use a...?", "options": ["Vertical Spread", "Calendar Spread", "Strangle"], "a": "Vertical Spread"}
     ]
 }
 
@@ -340,7 +360,7 @@ def page_academy():
         st.markdown(f"### Level {int(lvl_map.get(current_level)/50 + 1)}")
 
     st.markdown("---")
-    tabs = st.tabs(["101: Contracts", "201: Casino Rule"])
+    tabs = st.tabs(["101: Contracts", "201: Casino Rule", "301: Greeks", "401: Spreads"])
     
     with tabs[0]:
         content = ACADEMY_CONTENT["101"]["levels"][current_level]
@@ -357,6 +377,22 @@ def page_academy():
         c_a.error(f"**BUY**: {content['Buy']}")
         c_b.success(f"**SELL**: {content['Sell']}")
         st.info(f"💡 {content['Key']}")
+
+    with tabs[2]:
+        content = ACADEMY_CONTENT["301"]["levels"][current_level]
+        st.subheader(ACADEMY_CONTENT["301"]["title"])
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Delta", "Price", delta_color="normal"); c1.write(content['Delta'])
+        c2.metric("Theta", "Time", delta_color="inverse"); c2.write(content['Theta'])
+        c3.metric("Vega", "Vol", delta_color="off"); c3.write(content['Vega'])
+        st.success(f"💡 {content['Key']}")
+
+    with tabs[3]:
+        content = ACADEMY_CONTENT["401"]["levels"][current_level]
+        st.subheader(ACADEMY_CONTENT["401"]["title"])
+        st.info(f"**Concept**: {content['Concept']}")
+        st.success(f"**Benefit**: {content['Benefit']}")
+        st.caption(f"💡 {content['Key']}")
 
     st.markdown("---")
     if current_level == "Quant":
