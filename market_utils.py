@@ -1,6 +1,7 @@
 import yfinance as yf
 import pandas as pd
 import numpy as np
+from datetime import datetime, timedelta
 
 # --- CONFIGURATION ---
 SECTOR_MAP = {
@@ -16,12 +17,20 @@ LIQUID_WATCHLIST = [
     'NFLX', 'COIN', 'MSTR', 'PLTR'
 ]
 
+ASSET_CLASSES = {
+    'SPY': 'Equities',
+    'TLT': 'Bonds',
+    'GLD': 'Gold',
+    'USO': 'Oil',
+    'UUP': 'Dollar',
+    'BTC-USD': 'Bitcoin'
+}
+
 def get_macro_pulse():
     """Fetches key macro indicators: VIX, 10Y Yield, Dollar."""
     tickers = ['^VIX', '^TNX', 'DX-Y.NYB']
     try:
         data = yf.download(tickers, period="5d", progress=False)['Close']
-        # Handle Multi-index column issue in new yfinance versions
         if isinstance(data.columns, pd.MultiIndex):
             data.columns = data.columns.get_level_values(0)
             
@@ -36,7 +45,7 @@ def get_macro_pulse():
         if '^TNX' in data:
             tnx = data['^TNX'].iloc[-1]
             tnx_prev = data['^TNX'].iloc[-2]
-            pulse['TNX'] = {"val": tnx/10, "delta": (tnx - tnx_prev)/10} # Convert to %
+            pulse['TNX'] = {"val": tnx/10, "delta": (tnx - tnx_prev)/10}
             
         # DXY
         if 'DX-Y.NYB' in data:
@@ -47,6 +56,67 @@ def get_macro_pulse():
         return pulse
     except Exception as e:
         return None
+
+def get_market_regime():
+    """
+    Calculates institutional regime indicators.
+    1. VIX Term Structure Proxy (VIX9D vs VIX).
+    2. Risk Appetite (XLY vs XLP).
+    3. Trend (SPY vs 200 SMA).
+    """
+    try:
+        # VIX9D is 9-day vol, VIX is 30-day. 
+        # If 9D > 30D, we are in BACKWARDATION (Panic).
+        # XLY (Discretionary) / XLP (Staples) > Rising means Risk On.
+        tickers = ['^VIX9D', '^VIX', 'XLY', 'XLP', 'SPY']
+        data = yf.download(tickers, period="1y", progress=False)['Close']
+        
+        if isinstance(data.columns, pd.MultiIndex):
+            data.columns = data.columns.get_level_values(0)
+
+        regime = {}
+
+        # 1. Term Structure
+        if '^VIX9D' in data and '^VIX' in data:
+            v9 = data['^VIX9D'].iloc[-1]
+            v30 = data['^VIX'].iloc[-1]
+            ratio = v9 / v30
+            state = "Backwardation (PANIC)" if ratio > 1.05 else "Contango (Normal)"
+            regime['Term_Structure'] = {"ratio": ratio, "state": state, "v9": v9, "v30": v30}
+
+        # 2. Risk Gauge
+        if 'XLY' in data and 'XLP' in data:
+            curr = data['XLY'].iloc[-1] / data['XLP'].iloc[-1]
+            prev = data['XLY'].iloc[-5] / data['XLP'].iloc[-5] # 1 week ago
+            trend = "Risk ON" if curr > prev else "Risk OFF"
+            regime['Risk_Gauge'] = {"val": curr, "trend": trend}
+
+        # 3. SPY 200 SMA
+        if 'SPY' in data:
+            spy_price = data['SPY'].iloc[-1]
+            sma_200 = data['SPY'].rolling(window=200).mean().iloc[-1]
+            dist = (spy_price - sma_200) / sma_200 * 100
+            regime['SPY_Trend'] = {"price": spy_price, "sma200": sma_200, "dist": dist}
+
+        return regime
+    except:
+        return None
+
+def get_correlation_matrix():
+    """Calculates 30-day correlation between major asset classes."""
+    try:
+        tickers = list(ASSET_CLASSES.keys())
+        data = yf.download(tickers, period="3mo", progress=False)['Close']
+        if isinstance(data.columns, pd.MultiIndex):
+            data.columns = data.columns.get_level_values(0)
+            
+        # Log Returns
+        returns = np.log(data / data.shift(1))
+        # 30-Day Rolling Correlation
+        corr_matrix = returns.tail(30).corr()
+        return corr_matrix
+    except:
+        return pd.DataFrame()
 
 def get_sector_momentum():
     """Calculates 5-day Relative Strength of Sectors."""
@@ -68,35 +138,25 @@ def get_sector_momentum():
         return pd.DataFrame()
 
 def scan_volatility_opportunities():
-    """
-    Scans the Liquid Watchlist for High IV Rank.
-    Note: Calculating IV Rank requires 1 year of history, so this is heavy.
-    """
+    """Scans Liquid Watchlist for High IV Rank."""
     results = []
-    
-    # Batch download to save time
     try:
         data = yf.download(LIQUID_WATCHLIST, period="1y", group_by='ticker', progress=False)
         
         for ticker in LIQUID_WATCHLIST:
             try:
-                # Extract single ticker dataframe
                 df = data[ticker]
                 if df.empty: continue
                 
-                # Calculate Volatility (30-day rolling std dev of log returns)
                 df['Log_Ret'] = np.log(df['Close'] / df['Close'].shift(1))
                 df['Vol'] = df['Log_Ret'].rolling(window=30).std() * np.sqrt(252) * 100
                 
-                # Drop NaNs
                 vol_clean = df['Vol'].dropna()
                 if vol_clean.empty: continue
                 
                 current_vol = vol_clean.iloc[-1]
-                min_vol = vol_clean.min()
-                max_vol = vol_clean.max()
+                min_vol, max_vol = vol_clean.min(), vol_clean.max()
                 
-                # IV Rank Calculation
                 iv_rank = 0
                 if max_vol != min_vol:
                     iv_rank = (current_vol - min_vol) / (max_vol - min_vol) * 100
@@ -107,8 +167,7 @@ def scan_volatility_opportunities():
                     "IV Rank": iv_rank,
                     "Current IV": current_vol
                 })
-            except:
-                continue
+            except: continue
                 
         return pd.DataFrame(results).sort_values("IV Rank", ascending=False)
     except:
