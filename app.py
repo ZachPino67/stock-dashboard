@@ -114,15 +114,29 @@ def page_academy():
     current_level = st.session_state.user_level
     lvl_map = {"Rookie": 0, "Trader": 50, "Quant": 100}
     
+    # Progress Header
     c1, c2 = st.columns([3, 1])
     with c1:
         st.markdown(f"## 🎓 Clearance: <span style='color:#00FF88'>{current_level.upper()}</span>", unsafe_allow_html=True)
         st.progress(lvl_map.get(current_level, 0))
     with c2:
-        st.markdown(f"### Level {int(lvl_map.get(current_level)/50 + 1)}")
+        # Manual Level Selector (Override)
+        st.caption("Override Clearance")
+        levels = ["Rookie", "Trader", "Quant"]
+        selected_level = st.selectbox(
+            "Select Level", 
+            levels, 
+            index=levels.index(current_level), 
+            label_visibility="collapsed"
+        )
+        
+        if selected_level != current_level:
+            st.session_state.user_level = selected_level
+            st.rerun()
 
     st.markdown("---")
     
+    # Dynamic Tabs based on imported Data
     module_keys = list(ACADEMY_CONTENT.keys())
     tabs = st.tabs([ACADEMY_CONTENT[k]["title"] for k in module_keys])
     
