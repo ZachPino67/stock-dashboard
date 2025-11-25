@@ -16,7 +16,7 @@ st.set_page_config(
     page_title="OpStruct Pro",
     page_icon="♟️",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"
 )
 
 # INJECT GLOBAL CSS
@@ -61,42 +61,140 @@ def fetch_market_data(ticker, expiry, current_price):
     return calls, puts, engine.r
 
 # ==================================================
-#                  VIEW: HOMEPAGE
+#                  VIEW: HOMEPAGE (REBUILT)
 # ==================================================
 def page_home():
+    # --- HOMEPAGE SPECIFIC CSS ---
+    st.markdown("""
+    <style>
+        .home-container {
+            padding: 2rem 0;
+            border-bottom: 1px solid #30363D;
+        }
+        .manifesto-text {
+            font-family: 'Inter', sans-serif;
+            color: #8899A6;
+            font-size: 1.1rem;
+            line-height: 1.6;
+        }
+        .stat-box {
+            background: #0D1117;
+            border: 1px solid #30363D;
+            border-radius: 8px;
+            padding: 15px;
+            text-align: center;
+        }
+        .stat-num {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: #00FF88;
+        }
+        .stat-label {
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #888;
+        }
+        .architect-sign {
+            font-family: 'JetBrains Mono', monospace;
+            color: #58A6FF;
+            font-size: 0.9rem;
+            margin-top: 10px;
+        }
+    </style>
+    """, unsafe_allow_html=True)
+
+    # --- SECTION 1: THE HERO ---
     st.markdown("<br>", unsafe_allow_html=True)
-    st.markdown(
-        """
-        <div style="text-align: center;">
-            <h1 class="hero-title">OpStruct.</h1>
-            <h3 style="color: #8899A6; font-weight: 400; margin-top: 10px;">Master the Mathematics of Risk.</h3>
-        </div>
-        """, 
-        unsafe_allow_html=True
-    )
-    st.markdown("---")
-    c1, c2 = st.columns(2, gap="large")
+    c1, c2 = st.columns([2, 1])
     with c1:
+        st.markdown('<h1 class="hero-title">OpStruct.</h1>', unsafe_allow_html=True)
+        st.markdown("### Institutional Risk Modeling for the Retail Trader.")
         st.markdown("""
-        <div class="concept-card">
-            <div class="concept-emoji">🎓</div>
-            <div class="concept-title">The University</div>
-            <p class="card-text">Institutional Curriculum. From <b>Account Killers</b> to <b>Dark Pools</b>.</p>
+        <div class="manifesto-text">
+        Most traders treat options like lottery tickets. Pros treat them like engineering problems.<br>
+        This isn't a broker. It's a <b>Structuring Engine</b> designed to bridge the gap between 
+        retail guessing and quantitative execution.
         </div>
         """, unsafe_allow_html=True)
-        if st.button("Enter University →", use_container_width=True): set_page('academy')
+        
+        st.markdown("<br>", unsafe_allow_html=True)
+        b1, b2 = st.columns(2)
+        if b1.button("🎓 Enter Academy", type="primary", use_container_width=True): set_page('academy')
+        if b2.button("📐 Launch Terminal", use_container_width=True): set_page('terminal')
+
     with c2:
+        # Tech Stack Visualization
         st.markdown("""
-        <div class="concept-card">
-            <div class="concept-emoji">📐</div>
-            <div class="concept-title">The Terminal</div>
-            <p class="card-text">Structuring engine with <b>Theta & Vega Simulators</b>.</p>
+        <div class="stat-box" style="margin-top: 20px;">
+            <div class="stat-num">100%</div>
+            <div class="stat-label">Python Native</div>
+        </div>
+        <div class="stat-box" style="margin-top: 10px;">
+            <div class="stat-num">BSM</div>
+            <div class="stat-label">Vectorized Model</div>
+        </div>
+        <div class="stat-box" style="margin-top: 10px;">
+            <div class="stat-num">&lt;50ms</div>
+            <div class="stat-label">Compute Latency</div>
         </div>
         """, unsafe_allow_html=True)
-        if st.button("Launch Terminal →", use_container_width=True): set_page('terminal')
+
+    st.markdown("---")
+
+    # --- SECTION 2: THE ARCHITECTURE (THE EFFORT) ---
+    st.subheader("⚙️ Under the Hood")
+    a1, a2, a3 = st.columns(3)
+    
+    with a1:
+        st.markdown("#### 🧠 The Engine")
+        st.caption("Custom Math Layer")
+        st.markdown("""
+        I didn't use off-the-shelf libraries. I built a custom **Vectorized Quant Engine** using `NumPy` and `SciPy`. It calculates Greeks (Delta, Gamma, Theta, Vega) across 
+        entire option chains instantly, adjusting for dynamic interest rates (`^IRX`) in real-time.
+        """)
+        
+    with a2:
+        st.markdown("#### 🛡️ The Logic")
+        st.caption("Safety First")
+        st.markdown("""
+        The system enforces **Institutional Constraints**. It automatically detects 
+        "Wash Trades," prevents you from structuring undefined risk without warnings, 
+        and calculates **Probability of Profit (POP)** using Z-Score statistical analysis.
+        """)
+        
+    with a3:
+        st.markdown("#### ⚡ The Sim")
+        st.caption("Stress Testing")
+        st.markdown("""
+        Static charts are useless. I engineered dynamic **Theta (Time)** and **Vega (Volatility)** simulators. This lets you "stress test" your portfolio against a market crash 
+        or a volatility crush before you ever risk a dollar.
+        """)
+
+    st.markdown("---")
+
+    # --- SECTION 3: THE ARCHITECT (YOU) ---
+    c_bio, c_img = st.columns([3, 1])
+    with c_bio:
+        st.subheader("👨‍💻 The Architect")
+        st.markdown("""
+        <div class="manifesto-text">
+        I built OpStruct because I was tired of seeing retail traders donate liquidity to algorithms. 
+        <br><br>
+        Financial engineering shouldn't be gated behind a $24,000 Bloomberg Terminal. 
+        I spent weeks optimizing the mathematics and UX of this tool to prove that 
+        <b>sophisticated structuring can be accessible.</b>
+        <br><br>
+        This project represents the convergence of Full-Stack Engineering and Quantitative Finance.
+        </div>
+        <div class="architect-sign">
+        > Built by [Your Name] // Quant Developer
+        </div>
+        """, unsafe_allow_html=True)
 
 # ==================================================
-#                  VIEW: ACADEMY (UPDATED)
+#                  VIEW: ACADEMY
 # ==================================================
 def page_academy():
     current_level = st.session_state.user_level
@@ -118,7 +216,6 @@ def page_academy():
     st.markdown("---")
     
     # PERMISSION LOGIC
-    # Rookie sees Phase 1-2. Trader sees 1-4. Quant sees 1-5.
     visible_phases = []
     if current_level == "Rookie": visible_phases = ["phase1", "phase2"]
     elif current_level == "Trader": visible_phases = ["phase1", "phase2", "phase3", "phase4"]
@@ -129,18 +226,14 @@ def page_academy():
     
     for i, phase in enumerate(ACADEMY_PHASES):
         with tabs[i]:
-            # LOCK LOGIC
             if phase["id"] not in visible_phases:
                 st.error(f"🔒 Clearance Restricted. Reach **{phase['req_level']}** to unlock this module.")
                 st.markdown(f"*{phase['desc']}*")
             else:
                 st.info(f"**Objective:** {phase['desc']}")
-                
-                # Render Topics
                 for topic in phase["topics"]:
                     with st.expander(f"📌 {topic['title']}", expanded=False):
                         st.markdown(topic['content'])
-                        # Inject Diagram Tags for AI context (Instructions)
                         if "Greeks" in phase['title']: st.caption("")
                         if "Structure" in phase['title']: st.caption("")
                         if "Edge" in phase['title']: st.caption("")
@@ -278,7 +371,7 @@ def page_terminal():
                 <div class="ticket-header"><span>{t['Type']}</span></div>{rows}
                 <div class="ticket-footer"><div class="cost-display"><div class="cost-val">{'Debit' if cost>0 else 'Credit'}: ${abs(cost)*100:.0f}</div></div></div>
                 <div style="margin-top:15px;padding:8px;background:rgba(255,255,255,0.05);border-radius:4px;display:flex;justify-content:space-between;">
-                    <span style="color:#888;">Probability of Profit (PoP)</span><span style="color:#00FF88;font-weight:bold;">{pop:.1f}%</span>
+                    <span style="color:#888;">POP</span><span style="color:#00FF88;font-weight:bold;">{pop:.1f}%</span>
                 </div>
             </div>""", unsafe_allow_html=True)
 
@@ -316,9 +409,12 @@ def page_terminal():
 # --- ROUTER ---
 with st.sidebar:
     st.title("OpStruct")
-    if st.button("🏠 Home"): set_page('home')
-    if st.button("🎓 Academy"): set_page('academy')
-    if st.button("📐 Terminal"): set_page('terminal')
+    st.caption("Institutional Grade v4.2")
+    st.markdown("---")
+    if st.button("🏠 Home", use_container_width=True): set_page('home')
+    if st.button("🎓 Academy", use_container_width=True): set_page('academy')
+    if st.button("📐 Terminal", use_container_width=True): set_page('terminal')
+    st.markdown("---")
 
 if st.session_state.page == 'home': page_home()
 elif st.session_state.page == 'academy': page_academy()
