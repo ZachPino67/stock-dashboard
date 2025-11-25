@@ -269,7 +269,7 @@ def page_terminal():
                 <div class="ticket-header"><span>{t['Type']}</span></div>{rows}
                 <div class="ticket-footer"><div class="cost-display"><div class="cost-val">{'Debit' if cost>0 else 'Credit'}: ${abs(cost)*100:.0f}</div></div></div>
                 <div style="margin-top:15px;padding:8px;background:rgba(255,255,255,0.05);border-radius:4px;display:flex;justify-content:space-between;">
-                    <span style="color:#888;">Percent Chance Profit</span><span style="color:#00FF88;font-weight:bold;">{pop:.1f}%</span>
+                    <span style="color:#888;">Probability of Profit (PoP)</span><span style="color:#00FF88;font-weight:bold;">{pop:.1f}%</span>
                 </div>
             </div>""", unsafe_allow_html=True)
 
