@@ -10,13 +10,15 @@ import time
 # --- MVC IMPORTS ---
 from quant_engine import VectorizedQuantEngine
 from academy_data import APP_STYLE, ACADEMY_PHASES, QUIZ_BANK
+# Import the new Market Utils
+import market_utils 
 
 # --- CONFIGURATION ---
 st.set_page_config(
     page_title="OpStruct Pro",
     page_icon="♟️",
     layout="wide",
-    initial_sidebar_state="collapsed"
+    initial_sidebar_state="expanded"
 )
 
 # INJECT GLOBAL CSS
@@ -61,51 +63,21 @@ def fetch_market_data(ticker, expiry, current_price):
     return calls, puts, engine.r
 
 # ==================================================
-#                  VIEW: HOMEPAGE (REBUILT)
+#                  VIEW: HOMEPAGE
 # ==================================================
 def page_home():
     # --- HOMEPAGE SPECIFIC CSS ---
     st.markdown("""
     <style>
-        .home-container {
-            padding: 2rem 0;
-            border-bottom: 1px solid #30363D;
-        }
-        .manifesto-text {
-            font-family: 'Inter', sans-serif;
-            color: #8899A6;
-            font-size: 1.1rem;
-            line-height: 1.6;
-        }
-        .stat-box {
-            background: #0D1117;
-            border: 1px solid #30363D;
-            border-radius: 8px;
-            padding: 15px;
-            text-align: center;
-        }
-        .stat-num {
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 1.8rem;
-            font-weight: 700;
-            color: #00FF88;
-        }
-        .stat-label {
-            font-size: 0.8rem;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            color: #888;
-        }
-        .architect-sign {
-            font-family: 'JetBrains Mono', monospace;
-            color: #58A6FF;
-            font-size: 0.9rem;
-            margin-top: 10px;
-        }
+        .home-container { padding: 2rem 0; border-bottom: 1px solid #30363D; }
+        .manifesto-text { font-family: 'Inter', sans-serif; color: #8899A6; font-size: 1.1rem; line-height: 1.6; }
+        .stat-box { background: #0D1117; border: 1px solid #30363D; border-radius: 8px; padding: 15px; text-align: center; }
+        .stat-num { font-family: 'JetBrains Mono', monospace; font-size: 1.8rem; font-weight: 700; color: #00FF88; }
+        .stat-label { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 1px; color: #888; }
+        .architect-sign { font-family: 'JetBrains Mono', monospace; color: #58A6FF; font-size: 0.9rem; margin-top: 10px; }
     </style>
     """, unsafe_allow_html=True)
 
-    # --- SECTION 1: THE HERO ---
     st.markdown("<br>", unsafe_allow_html=True)
     c1, c2 = st.columns([2, 1])
     with c1:
@@ -120,12 +92,12 @@ def page_home():
         """, unsafe_allow_html=True)
         
         st.markdown("<br>", unsafe_allow_html=True)
-        b1, b2 = st.columns(2)
-        if b1.button("🎓 Enter Academy", type="primary", use_container_width=True): set_page('academy')
-        if b2.button("📐 Launch Terminal", use_container_width=True): set_page('terminal')
+        b1, b2, b3 = st.columns(3) # Added War Room button
+        if b1.button("🎓 Academy", type="primary", use_container_width=True): set_page('academy')
+        if b2.button("📐 Terminal", use_container_width=True): set_page('terminal')
+        if b3.button("⚔️ War Room", use_container_width=True): set_page('war_room')
 
     with c2:
-        # Tech Stack Visualization
         st.markdown("""
         <div class="stat-box" style="margin-top: 20px;">
             <div class="stat-num">100%</div>
@@ -142,56 +114,120 @@ def page_home():
         """, unsafe_allow_html=True)
 
     st.markdown("---")
-
-    # --- SECTION 2: THE ARCHITECTURE (THE EFFORT) ---
     st.subheader("⚙️ Under the Hood")
     a1, a2, a3 = st.columns(3)
-    
     with a1:
         st.markdown("#### 🧠 The Engine")
         st.caption("Custom Math Layer")
-        st.markdown("""
-        I didn't use off-the-shelf libraries. I built a custom **Vectorized Quant Engine** using `NumPy` and `SciPy`. It calculates Greeks (Delta, Gamma, Theta, Vega) across 
-        entire option chains instantly, adjusting for dynamic interest rates (`^IRX`) in real-time.
-        """)
-        
+        st.markdown("I didn't use off-the-shelf libraries. I built a custom **Vectorized Quant Engine** using `NumPy` and `SciPy`. It calculates Greeks instantly.")
     with a2:
         st.markdown("#### 🛡️ The Logic")
         st.caption("Safety First")
-        st.markdown("""
-        The system enforces **Institutional Constraints**. It automatically detects 
-        "Wash Trades," prevents you from structuring undefined risk without warnings, 
-        and calculates **Probability of Profit (POP)** using Z-Score statistical analysis.
-        """)
-        
+        st.markdown("The system enforces **Institutional Constraints**. It automatically detects Wash Trades and calculates POP using Z-Score statistical analysis.")
     with a3:
         st.markdown("#### ⚡ The Sim")
         st.caption("Stress Testing")
-        st.markdown("""
-        Static charts are useless. I engineered dynamic **Theta (Time)** and **Vega (Volatility)** simulators. This lets you "stress test" your portfolio against a market crash 
-        or a volatility crush before you ever risk a dollar.
-        """)
+        st.markdown("Static charts are useless. I engineered dynamic **Theta** and **Vega** simulators to stress test portfolios against crashes.")
 
     st.markdown("---")
-
-    # --- SECTION 3: THE ARCHITECT (YOU) ---
     c_bio, c_img = st.columns([3, 1])
     with c_bio:
         st.subheader("👨‍💻 The Architect")
         st.markdown("""
         <div class="manifesto-text">
         I built OpStruct because I was tired of seeing retail traders donate liquidity to algorithms. 
-        <br><br>
-        Financial engineering shouldn't be gated behind a $24,000 Bloomberg Terminal. 
-        I spent weeks optimizing the mathematics and UX of this tool to prove that 
-        <b>sophisticated structuring can be accessible.</b>
-        <br><br>
-        This project represents the convergence of Full-Stack Engineering and Quantitative Finance.
+        Financial engineering shouldn't be gated behind a $24,000 Bloomberg Terminal.
         </div>
-        <div class="architect-sign">
-        > Built by [Zach P] // Future Fintech CEO
-        </div>
+        <div class="architect-sign">> Built by [Your Name] // Quant Developer</div>
         """, unsafe_allow_html=True)
+
+# ==================================================
+#                  VIEW: WAR ROOM (NEW)
+# ==================================================
+def page_war_room():
+    st.markdown("## ⚔️ The War Room")
+    st.caption("Macro Dashboard. Know the terrain before you engage.")
+    st.markdown("---")
+
+    # 1. MACRO PULSE
+    with st.spinner("Scanning Global Macro..."):
+        pulse = market_utils.get_macro_pulse()
+        if pulse:
+            m1, m2, m3 = st.columns(3)
+            # VIX
+            v_col = "inverse" if pulse['VIX']['val'] < 20 else "normal"
+            m1.metric("The Fear Gauge (VIX)", f"{pulse['VIX']['val']:.2f}", f"{pulse['VIX']['delta']:.2f}", delta_color=v_col)
+            # TNX
+            t_col = "off"
+            m2.metric("Cost of Money (10Y Yield)", f"{pulse['TNX']['val']:.2f}%", f"{pulse['TNX']['delta']:.2f}%", delta_color=t_col)
+            # DXY
+            m3.metric("The Dollar (DXY)", f"{pulse['DXY']['val']:.2f}", f"{pulse['DXY']['delta']:.2f}")
+        else:
+            st.warning("Macro data unavailable. API limit reached.")
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # 2. SECTOR & VOLATILITY
+    col_left, col_right = st.columns([1, 2])
+    
+    with col_left:
+        st.subheader("🔥 High IV Scanner")
+        st.caption("Liquid tickers with highest IV Rank (Cheap vs Expensive).")
+        
+        with st.spinner("Ranking Volatility..."):
+            vol_df = market_utils.scan_volatility_opportunities()
+            
+            if not vol_df.empty:
+                # Custom DataFrame Display
+                st.dataframe(
+                    vol_df, 
+                    column_config={
+                        "Ticker": "Symbol",
+                        "Price": st.column_config.NumberColumn(format="$%.2f"),
+                        "IV Rank": st.column_config.ProgressColumn(format="%.0f%%", min_value=0, max_value=100),
+                        "Current IV": st.column_config.NumberColumn(format="%.1f%%")
+                    },
+                    hide_index=True,
+                    use_container_width=True,
+                    height=400
+                )
+            else:
+                st.info("Scanner offline (Data Limit). Try again in 1 min.")
+
+    with col_right:
+        st.subheader("🌊 Sector Momentum (5D)")
+        st.caption("Where is the money flowing this week?")
+        
+        with st.spinner("Analyzing Flows..."):
+            sector_df = market_utils.get_sector_momentum()
+            
+            if not sector_df.empty:
+                # Create Bar Chart for Momentum
+                fig = go.Figure()
+                
+                # Color logic: Green for positive, Red for negative
+                colors = ['#00FF88' if v > 0 else '#FF4B4B' for v in sector_df['Change']]
+                
+                fig.add_trace(go.Bar(
+                    x=sector_df['Ticker'],
+                    y=sector_df['Change'],
+                    marker_color=colors,
+                    text=sector_df['Name'],
+                    textposition='auto'
+                ))
+                
+                fig.update_layout(
+                    template="plotly_dark",
+                    paper_bgcolor='rgba(0,0,0,0)',
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    height=400,
+                    margin=dict(t=20, b=50, l=50, r=20),
+                    yaxis_title="% Change (5D)",
+                    xaxis_title="Sector ETF"
+                )
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("Sector data unavailable.")
 
 # ==================================================
 #                  VIEW: ACADEMY
@@ -199,8 +235,6 @@ def page_home():
 def page_academy():
     current_level = st.session_state.user_level
     lvl_map = {"Rookie": 0, "Trader": 50, "Quant": 100}
-    
-    # LEVEL HEADER & OVERRIDE
     c1, c2 = st.columns([3, 1])
     with c1:
         st.markdown(f"## 🎓 Clearance: <span style='color:#00FF88'>{current_level.upper()}</span>", unsafe_allow_html=True)
@@ -214,33 +248,24 @@ def page_academy():
             st.rerun()
 
     st.markdown("---")
-    
-    # PERMISSION LOGIC
     visible_phases = []
     if current_level == "Rookie": visible_phases = ["phase1", "phase2"]
     elif current_level == "Trader": visible_phases = ["phase1", "phase2", "phase3", "phase4"]
     else: visible_phases = ["phase1", "phase2", "phase3", "phase4", "phase5"]
 
-    # RENDER PHASES
     tabs = st.tabs([p["title"] for p in ACADEMY_PHASES])
-    
     for i, phase in enumerate(ACADEMY_PHASES):
         with tabs[i]:
             if phase["id"] not in visible_phases:
                 st.error(f"🔒 Clearance Restricted. Reach **{phase['req_level']}** to unlock this module.")
-                st.markdown(f"*{phase['desc']}*")
             else:
                 st.info(f"**Objective:** {phase['desc']}")
                 for topic in phase["topics"]:
                     with st.expander(f"📌 {topic['title']}", expanded=False):
                         st.markdown(topic['content'])
                         if "Greeks" in phase['title']: st.caption("")
-                        if "Structure" in phase['title']: st.caption("")
-                        if "Edge" in phase['title']: st.caption("")
 
     st.markdown("---")
-    
-    # EXAM SECTION
     if current_level == "Quant":
         st.balloons()
         st.success("🎉 Curriculum Complete.")
@@ -257,22 +282,19 @@ def page_academy():
                 ans = st.radio(f"A{idx}", q['options'], key=f"q_{current_level}_{idx}", label_visibility="collapsed")
                 if ans == q['a']: score += 1
                 st.divider()
-            
             if st.form_submit_button("Submit Exam"):
                 if score == len(qs):
                     st.success("PASSED!")
                     st.session_state.user_level = "Trader" if current_level == "Rookie" else "Quant"
                     time.sleep(1)
                     st.rerun()
-                else:
-                    st.error("FAILED. Study the material above.")
+                else: st.error("FAILED. Study the material above.")
 
 # ==================================================
 #                  VIEW: TERMINAL
 # ==================================================
 def page_terminal():
     st.markdown("## 📐 OpStruct Pro Terminal")
-    
     c1, c2, c3 = st.columns([1, 1, 2])
     with c1:
         raw = st.text_input("Ticker", "SPY").strip()
@@ -330,19 +352,10 @@ def page_terminal():
     if 'data' in st.session_state:
         d = st.session_state['data']
         m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Spot", f"${d['price']:.2f}", help="Current market price of the underlying asset.")
-        m2.metric(
-            "IV Rank", f"{d['rank']:.0f}%", 
-            help="Relative valuation. 0% = Cheapest in 52wks, 100% = Most Expensive. >50% suggests Selling Premium."
-        )
-        m3.metric(
-            "IV", f"{d['vol']:.1f}%", 
-            help="Implied Volatility. Annualized expected move (1 Std Dev). 20% IV = Market expects +/- 20% move over 1yr."
-        )
-        m4.metric(
-            "Risk Free", f"{d['r']*100:.2f}%", 
-            help="13-Week Treasury Yield. The 'Hurdle Rate'. Higher rates make Calls expensive and Puts cheap (Rho)."
-        )
+        m1.metric("Spot", f"${d['price']:.2f}", help="Current market price.")
+        m2.metric("IV Rank", f"{d['rank']:.0f}%", help="0%=Cheapest in 52wks, 100%=Most Expensive.")
+        m3.metric("IV", f"{d['vol']:.1f}%", help="Annualized expected move (1 Std Dev).")
+        m4.metric("Risk Free", f"{d['r']*100:.2f}%", help="13-Week Treasury Yield.")
 
         st.divider()
         c_l, c_r = st.columns([1, 2])
@@ -398,24 +411,20 @@ def page_terminal():
             fig.add_vline(x=d['price'], line_dash="dash", line_color="#F4D03F")
             fig.update_layout(template="plotly_dark", height=350, margin=dict(l=10,r=10,t=10,b=10), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', showlegend=False)
             st.plotly_chart(fig, use_container_width=True)
-            
             with st.expander("📊 Chart Guide", expanded=False):
-                st.markdown("""
-                * **White Curve:** Value at selected date (Gamma).
-                * **Green/Red:** Profit vs Loss zones.
-                * **Simulators:** Use sliders to test Time Decay (Theta) and Panic (Vega).
-                """)
+                st.markdown("* **White Curve:** Value at T+Days.\n* **Green/Red:** Profit vs Loss.")
 
 # --- ROUTER ---
 with st.sidebar:
     st.title("OpStruct")
-    st.caption("Institutional Grade v4.2")
+    st.caption("Institutional Grade v5.0")
     st.markdown("---")
     if st.button("🏠 Home", use_container_width=True): set_page('home')
+    if st.button("⚔️ War Room", use_container_width=True): set_page('war_room')
     if st.button("🎓 Academy", use_container_width=True): set_page('academy')
     if st.button("📐 Terminal", use_container_width=True): set_page('terminal')
-    st.markdown("---")
 
 if st.session_state.page == 'home': page_home()
+elif st.session_state.page == 'war_room': page_war_room()
 elif st.session_state.page == 'academy': page_academy()
 elif st.session_state.page == 'terminal': page_terminal()
