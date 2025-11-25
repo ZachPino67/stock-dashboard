@@ -2,6 +2,7 @@ import streamlit as st
 import yfinance as yf
 import numpy as np
 import plotly.graph_objects as go
+import plotly.express as px
 import requests
 from datetime import datetime
 from scipy.stats import norm
@@ -10,7 +11,6 @@ import time
 # --- MVC IMPORTS ---
 from quant_engine import VectorizedQuantEngine
 from academy_data import APP_STYLE, ACADEMY_PHASES, QUIZ_BANK
-# Import the new Market Utils
 import market_utils 
 
 # --- CONFIGURATION ---
@@ -142,43 +142,72 @@ def page_home():
         """, unsafe_allow_html=True)
 
 # ==================================================
-#                  VIEW: WAR ROOM (NEW)
+#                  VIEW: WAR ROOM (REBUILT)
 # ==================================================
 def page_war_room():
     st.markdown("## ⚔️ The War Room")
-    st.caption("Macro Dashboard. Know the terrain before you engage.")
-    st.markdown("---")
-
-    # 1. MACRO PULSE
-    with st.spinner("Scanning Global Macro..."):
-        pulse = market_utils.get_macro_pulse()
-        if pulse:
-            m1, m2, m3 = st.columns(3)
-            # VIX
-            v_col = "inverse" if pulse['VIX']['val'] < 20 else "normal"
-            m1.metric("The Fear Gauge (VIX)", f"{pulse['VIX']['val']:.2f}", f"{pulse['VIX']['delta']:.2f}", delta_color=v_col)
-            # TNX
-            t_col = "off"
-            m2.metric("Cost of Money (10Y Yield)", f"{pulse['TNX']['val']:.2f}%", f"{pulse['TNX']['delta']:.2f}%", delta_color=t_col)
-            # DXY
-            m3.metric("The Dollar (DXY)", f"{pulse['DXY']['val']:.2f}", f"{pulse['DXY']['delta']:.2f}")
-        else:
-            st.warning("Macro data unavailable. API limit reached.")
-
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    # 2. SECTOR & VOLATILITY
-    col_left, col_right = st.columns([1, 2])
+    st.caption("Institutional Dashboard. Visualizing structure, flow, and correlations.")
     
-    with col_left:
-        st.subheader("🔥 High IV Scanner")
-        st.caption("Liquid tickers with highest IV Rank (Cheap vs Expensive).")
+    # --- ROW 1: THE HUD (REGIME) ---
+    st.markdown("#### 📡 Market Regime HUD")
+    with st.spinner("Analyzing Market Structure..."):
+        regime = market_utils.get_market_regime()
+        pulse = market_utils.get_macro_pulse()
         
-        with st.spinner("Ranking Volatility..."):
-            vol_df = market_utils.scan_volatility_opportunities()
+        if regime and pulse:
+            c1, c2, c3, c4 = st.columns(4)
             
+            # 1. Term Structure Gauge
+            ts_state = regime['Term_Structure']['state']
+            ts_color = "normal" if "Contango" in ts_state else "inverse" # Red if Backwardation
+            c1.metric("VIX Term Structure", ts_state, f"{regime['Term_Structure']['ratio']:.2f} Ratio", delta_color=ts_color, help="Ratio of 9-Day Vol to 30-Day Vol. >1.05 signals panic (Backwardation).")
+            
+            # 2. Risk Gauge
+            rg_trend = regime['Risk_Gauge']['trend']
+            rg_color = "normal" if "ON" in rg_trend else "inverse"
+            c2.metric("Risk Appetite (XLY/XLP)", rg_trend, f"{regime['Risk_Gauge']['val']:.2f}", delta_color=rg_color, help="Ratio of Consumer Discretionary to Staples. Rising = Risk On.")
+            
+            # 3. Trend Gauge
+            dist = regime['SPY_Trend']['dist']
+            t_col = "normal" if dist > 0 else "inverse"
+            c3.metric("SPY vs 200 SMA", f"{dist:.2f}%", f"${regime['SPY_Trend']['sma200']:.2f}", delta_color=t_col, help="Distance from the 200-Day Moving Average. Institutional support line.")
+
+            # 4. Cost of Money
+            c4.metric("10Y Yield (Gravity)", f"{pulse['TNX']['val']:.2f}%", f"{pulse['TNX']['delta']:.2f}%", delta_color="off")
+        else:
+            st.warning("Market Structure data unavailable.")
+
+    st.divider()
+
+    # --- ROW 2: CORRELATIONS & SCANNER ---
+    col_l, col_r = st.columns([1, 1])
+    
+    with col_l:
+        st.subheader("🔗 Cross-Asset Correlation (30D)")
+        st.caption("When this map turns all bright (1.0), diversification is failing.")
+        
+        with st.spinner("Calculating Matrix..."):
+            corr_matrix = market_utils.get_correlation_matrix()
+            if not corr_matrix.empty:
+                fig = px.imshow(
+                    corr_matrix, 
+                    text_auto=".2f",
+                    aspect="auto",
+                    color_continuous_scale="RdBu_r", # Red = High Correlation, Blue = Inverse
+                    zmin=-1, zmax=1
+                )
+                fig.update_layout(template="plotly_dark", height=400, margin=dict(t=20, b=20, l=20, r=20), paper_bgcolor='rgba(0,0,0,0)')
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("Correlation data unavailable.")
+
+    with col_r:
+        st.subheader("🔥 High IV Opportunity Scanner")
+        st.caption("Liquid tickers where Options are 'Expensive' (High IV Rank).")
+        
+        with st.spinner("Scanning Watchlist..."):
+            vol_df = market_utils.scan_volatility_opportunities()
             if not vol_df.empty:
-                # Custom DataFrame Display
                 st.dataframe(
                     vol_df, 
                     column_config={
@@ -192,42 +221,27 @@ def page_war_room():
                     height=400
                 )
             else:
-                st.info("Scanner offline (Data Limit). Try again in 1 min.")
+                st.info("Scanner offline.")
 
-    with col_right:
-        st.subheader("🌊 Sector Momentum (5D)")
-        st.caption("Where is the money flowing this week?")
-        
-        with st.spinner("Analyzing Flows..."):
-            sector_df = market_utils.get_sector_momentum()
-            
-            if not sector_df.empty:
-                # Create Bar Chart for Momentum
-                fig = go.Figure()
-                
-                # Color logic: Green for positive, Red for negative
-                colors = ['#00FF88' if v > 0 else '#FF4B4B' for v in sector_df['Change']]
-                
-                fig.add_trace(go.Bar(
-                    x=sector_df['Ticker'],
-                    y=sector_df['Change'],
-                    marker_color=colors,
-                    text=sector_df['Name'],
-                    textposition='auto'
-                ))
-                
-                fig.update_layout(
-                    template="plotly_dark",
-                    paper_bgcolor='rgba(0,0,0,0)',
-                    plot_bgcolor='rgba(0,0,0,0)',
-                    height=400,
-                    margin=dict(t=20, b=50, l=50, r=20),
-                    yaxis_title="% Change (5D)",
-                    xaxis_title="Sector ETF"
-                )
-                st.plotly_chart(fig, use_container_width=True)
-            else:
-                st.info("Sector data unavailable.")
+    st.divider()
+    
+    # --- ROW 3: SECTOR MOMENTUM ---
+    st.subheader("🌊 Sector Rotation (5-Day Momentum)")
+    with st.spinner("Tracking Flows..."):
+        sector_df = market_utils.get_sector_momentum()
+        if not sector_df.empty:
+            fig = go.Figure()
+            colors = ['#00FF88' if v > 0 else '#FF4B4B' for v in sector_df['Change']]
+            fig.add_trace(go.Bar(
+                x=sector_df['Ticker'], y=sector_df['Change'],
+                marker_color=colors, text=sector_df['Name'], textposition='auto'
+            ))
+            fig.update_layout(
+                template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+                height=350, margin=dict(t=20, b=50, l=50, r=20),
+                yaxis_title="% Change (5D)", xaxis_title="Sector ETF"
+            )
+            st.plotly_chart(fig, use_container_width=True)
 
 # ==================================================
 #                  VIEW: ACADEMY
