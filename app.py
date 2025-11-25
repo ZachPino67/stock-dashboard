@@ -138,7 +138,7 @@ def page_home():
         I built OpStruct because I was tired of seeing retail traders donate liquidity to algorithms. 
         Financial engineering shouldn't be gated behind a $24,000 Bloomberg Terminal.
         </div>
-        <div class="architect-sign">> Built by [Your Name] // Quant Developer</div>
+        <div class="architect-sign">> Built by Zach P // Future Fintech CEO</div>
         """, unsafe_allow_html=True)
 
 # ==================================================
