@@ -189,7 +189,7 @@ def page_home():
         This project represents the convergence of Full-Stack Engineering and Quantitative Finance.
         </div>
         <div class="architect-sign">
-        > Built by [Your Name] // Quant Developer
+        > Built by [Zach P] // Future Fintech CEO
         </div>
         """, unsafe_allow_html=True)
 
