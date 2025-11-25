@@ -237,10 +237,19 @@ def page_terminal():
     if 'data' in st.session_state:
         d = st.session_state['data']
         m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Spot", f"${d['price']:.2f}")
-        m2.metric("IV Rank", f"{d['rank']:.0f}%")
-        m3.metric("IV", f"{d['vol']:.1f}%")
-        m4.metric("Risk Free", f"{d['r']*100:.2f}%")
+        m1.metric("Spot", f"${d['price']:.2f}", help="Current market price of the underlying asset.")
+        m2.metric(
+            "IV Rank", f"{d['rank']:.0f}%", 
+            help="Relative valuation. 0% = Cheapest in 52wks, 100% = Most Expensive. >50% suggests Selling Premium."
+        )
+        m3.metric(
+            "IV", f"{d['vol']:.1f}%", 
+            help="Implied Volatility. Annualized expected move (1 Std Dev). 20% IV = Market expects +/- 20% move over 1yr."
+        )
+        m4.metric(
+            "Risk Free", f"{d['r']*100:.2f}%", 
+            help="13-Week Treasury Yield. The 'Hurdle Rate'. Higher rates make Calls expensive and Puts cheap (Rho)."
+        )
 
         st.divider()
         c_l, c_r = st.columns([1, 2])
@@ -269,7 +278,7 @@ def page_terminal():
                 <div class="ticket-header"><span>{t['Type']}</span></div>{rows}
                 <div class="ticket-footer"><div class="cost-display"><div class="cost-val">{'Debit' if cost>0 else 'Credit'}: ${abs(cost)*100:.0f}</div></div></div>
                 <div style="margin-top:15px;padding:8px;background:rgba(255,255,255,0.05);border-radius:4px;display:flex;justify-content:space-between;">
-                    <span style="color:#888;">Probability of Profit (PoP)</span><span style="color:#00FF88;font-weight:bold;">{pop:.1f}%</span>
+                    <span style="color:#888;">POP</span><span style="color:#00FF88;font-weight:bold;">{pop:.1f}%</span>
                 </div>
             </div>""", unsafe_allow_html=True)
 
