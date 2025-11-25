@@ -5,10 +5,11 @@ import plotly.graph_objects as go
 import requests
 from datetime import datetime
 from scipy.stats import norm
+import time
 
 # --- MVC IMPORTS ---
 from quant_engine import VectorizedQuantEngine
-from academy_data import APP_STYLE, ACADEMY_CONTENT, QUIZ_BANK
+from academy_data import APP_STYLE, ACADEMY_PHASES, QUIZ_BANK
 
 # --- CONFIGURATION ---
 st.set_page_config(
@@ -21,7 +22,7 @@ st.set_page_config(
 # INJECT GLOBAL CSS
 st.markdown(APP_STYLE, unsafe_allow_html=True)
 
-# --- SESSION STATE MANAGEMENT ---
+# --- SESSION STATE ---
 if 'page' not in st.session_state: st.session_state.page = 'home'
 if 'user_level' not in st.session_state: st.session_state.user_level = 'Rookie'
 
@@ -31,7 +32,6 @@ def set_page(page_name):
 # --- CACHED UTILITIES ---
 @st.cache_data(ttl=86400, show_spinner=False)
 def lookup_ticker(query):
-    """Resolves company names to tickers (e.g. 'Apple' -> 'AAPL')."""
     query = query.strip().upper()
     try:
         t = yf.Ticker(query)
@@ -49,24 +49,15 @@ def lookup_ticker(query):
 
 @st.cache_data(ttl=300, show_spinner=False)
 def fetch_market_data(ticker, expiry, current_price):
-    """
-    Fetches option chain and runs the Vectorized Quant Engine.
-    Cached for 5 minutes to prevent API rate limits.
-    """
     engine = VectorizedQuantEngine()
     stock = yf.Ticker(ticker)
-    
     try:
         opt = stock.option_chain(expiry)
         calls, puts = opt.calls, opt.puts
-    except Exception as e:
-        return None, None, None
-
+    except: return None, None, None
     T = (datetime.strptime(expiry, "%Y-%m-%d") - datetime.now()).days / 365.0
-    
     calls = engine.calculate_greeks_vectorized(calls, current_price, T, type='call')
     puts = engine.calculate_greeks_vectorized(puts, current_price, T, type='put')
-    
     return calls, puts, engine.r
 
 # ==================================================
@@ -84,118 +75,104 @@ def page_home():
         unsafe_allow_html=True
     )
     st.markdown("---")
-    
-    col1, col2 = st.columns(2, gap="large")
-    
-    with col1:
+    c1, c2 = st.columns(2, gap="large")
+    with c1:
         st.markdown("""
         <div class="concept-card">
             <div class="concept-emoji">🎓</div>
             <div class="concept-title">The University</div>
-            <p class="card-text">Gamified learning path. Start as a <b>Rookie</b>, pass exams, and unlock <b>Quant</b> clearance.</p>
+            <p class="card-text">Institutional Curriculum. From <b>Account Killers</b> to <b>Dark Pools</b>.</p>
         </div>
         """, unsafe_allow_html=True)
-        if st.button("Enter University →", key="btn_academy", use_container_width=True): set_page('academy')
-        
-    with col2:
+        if st.button("Enter University →", use_container_width=True): set_page('academy')
+    with c2:
         st.markdown("""
         <div class="concept-card">
             <div class="concept-emoji">📐</div>
             <div class="concept-title">The Terminal</div>
-            <p class="card-text">Institutional-grade structuring engine. <b>Visualize P&L, POP, and Greeks</b> in real-time.</p>
+            <p class="card-text">Structuring engine with <b>Theta & Vega Simulators</b>.</p>
         </div>
         """, unsafe_allow_html=True)
-        if st.button("Launch Terminal →", key="btn_terminal", use_container_width=True): set_page('terminal')
+        if st.button("Launch Terminal →", use_container_width=True): set_page('terminal')
 
 # ==================================================
-#                  VIEW: ACADEMY
+#                  VIEW: ACADEMY (UPDATED)
 # ==================================================
 def page_academy():
     current_level = st.session_state.user_level
     lvl_map = {"Rookie": 0, "Trader": 50, "Quant": 100}
     
-    # Progress Header
+    # LEVEL HEADER & OVERRIDE
     c1, c2 = st.columns([3, 1])
     with c1:
         st.markdown(f"## 🎓 Clearance: <span style='color:#00FF88'>{current_level.upper()}</span>", unsafe_allow_html=True)
         st.progress(lvl_map.get(current_level, 0))
     with c2:
-        # Manual Level Selector (Override)
         st.caption("Override Clearance")
         levels = ["Rookie", "Trader", "Quant"]
-        selected_level = st.selectbox(
-            "Select Level", 
-            levels, 
-            index=levels.index(current_level), 
-            label_visibility="collapsed"
-        )
-        
-        if selected_level != current_level:
-            st.session_state.user_level = selected_level
+        sel = st.selectbox("Lvl", levels, index=levels.index(current_level), label_visibility="collapsed")
+        if sel != current_level:
+            st.session_state.user_level = sel
             st.rerun()
 
     st.markdown("---")
     
-    # Dynamic Tabs based on imported Data
-    module_keys = list(ACADEMY_CONTENT.keys())
-    tabs = st.tabs([ACADEMY_CONTENT[k]["title"] for k in module_keys])
-    
-    for i, key in enumerate(module_keys):
-        with tabs[i]:
-            module = ACADEMY_CONTENT[key]
-            content = module["levels"][current_level]
-            
-            st.subheader(module["title"])
-            
-            if key == "101":
-                c_a, c_b = st.columns(2)
-                c_a.info(f"**CALL**: {content['Call']}")
-                c_b.error(f"**PUT**: {content['Put']}")
-            elif key == "201":
-                c_a, c_b = st.columns(2)
-                c_a.error(f"**BUY**: {content['Buy']}")
-                c_b.success(f"**SELL**: {content['Sell']}")
-            elif key == "301":
-                c1, c2, c3 = st.columns(3)
-                c1.metric("Delta", "Price", delta_color="normal"); c1.write(content['Delta'])
-                c2.metric("Theta", "Time", delta_color="inverse"); c2.write(content['Theta'])
-                c3.metric("Vega", "Vol", delta_color="off"); c3.write(content['Vega'])
-            else:
-                st.info(f"**Concept**: {content.get('Concept', '')}")
-                st.success(f"**Benefit**: {content.get('Benefit', '')}")
+    # PERMISSION LOGIC
+    # Rookie sees Phase 1-2. Trader sees 1-4. Quant sees 1-5.
+    visible_phases = []
+    if current_level == "Rookie": visible_phases = ["phase1", "phase2"]
+    elif current_level == "Trader": visible_phases = ["phase1", "phase2", "phase3", "phase4"]
+    else: visible_phases = ["phase1", "phase2", "phase3", "phase4", "phase5"]
 
-            if 'Key' in content:
-                st.caption(f"💡 Alpha Note: {content['Key']}")
+    # RENDER PHASES
+    tabs = st.tabs([p["title"] for p in ACADEMY_PHASES])
+    
+    for i, phase in enumerate(ACADEMY_PHASES):
+        with tabs[i]:
+            # LOCK LOGIC
+            if phase["id"] not in visible_phases:
+                st.error(f"🔒 Clearance Restricted. Reach **{phase['req_level']}** to unlock this module.")
+                st.markdown(f"*{phase['desc']}*")
+            else:
+                st.info(f"**Objective:** {phase['desc']}")
+                
+                # Render Topics
+                for topic in phase["topics"]:
+                    with st.expander(f"📌 {topic['title']}", expanded=False):
+                        st.markdown(topic['content'])
+                        # Inject Diagram Tags for AI context (Instructions)
+                        if "Greeks" in phase['title']: st.caption("")
+                        if "Structure" in phase['title']: st.caption("")
+                        if "Edge" in phase['title']: st.caption("")
 
     st.markdown("---")
     
+    # EXAM SECTION
     if current_level == "Quant":
         st.balloons()
-        st.success("🎉 You are a certified Quantitative Structurer.")
-        if st.button("Reset Progress"): 
+        st.success("🎉 Curriculum Complete.")
+        if st.button("Reset"): 
             st.session_state.user_level = 'Rookie'
             st.rerun()
     else:
-        with st.expander(f"📝 Take {current_level} Exam", expanded=False):
-            with st.form(key=f"quiz_{current_level}"):
-                score = 0
-                questions = QUIZ_BANK.get(current_level, [])
-                for idx, q in enumerate(questions):
-                    st.markdown(f"**Q{idx+1}: {q['q']}**")
-                    ans = st.radio(f"Select Answer {idx}", q['options'], key=f"q_{current_level}_{idx}", label_visibility="collapsed")
-                    if ans == q['a']: score += 1
-                    st.divider()
-                
-                if st.form_submit_button("Submit Exam"):
-                    if score == len(questions):
-                        st.success(f"PASSED! ({score}/{len(questions)})")
-                        new_level = "Trader" if current_level == "Rookie" else "Quant"
-                        st.session_state.user_level = new_level
-                        import time
-                        time.sleep(1)
-                        st.rerun()
-                    else:
-                        st.error(f"FAILED ({score}/{len(questions)}). Review the modules and try again.")
+        st.subheader(f"🚀 Promotion Exam: {current_level} to Next Level")
+        with st.form(key=f"quiz_{current_level}"):
+            score = 0
+            qs = QUIZ_BANK.get(current_level, [])
+            for idx, q in enumerate(qs):
+                st.markdown(f"**Q{idx+1}: {q['q']}**")
+                ans = st.radio(f"A{idx}", q['options'], key=f"q_{current_level}_{idx}", label_visibility="collapsed")
+                if ans == q['a']: score += 1
+                st.divider()
+            
+            if st.form_submit_button("Submit Exam"):
+                if score == len(qs):
+                    st.success("PASSED!")
+                    st.session_state.user_level = "Trader" if current_level == "Rookie" else "Quant"
+                    time.sleep(1)
+                    st.rerun()
+                else:
+                    st.error("FAILED. Study the material above.")
 
 # ==================================================
 #                  VIEW: TERMINAL
@@ -205,208 +182,134 @@ def page_terminal():
     
     c1, c2, c3 = st.columns([1, 1, 2])
     with c1:
-        raw_input = st.text_input("Ticker", "SPY").strip()
-        ticker = lookup_ticker(raw_input)
+        raw = st.text_input("Ticker", "SPY").strip()
+        ticker = lookup_ticker(raw)
     
     stock = yf.Ticker(ticker)
     try: 
         exps = stock.options
-        if not exps: raise ValueError("No chain")
+        if not exps: raise ValueError
     except: 
-        st.warning(f"No options data found for {ticker}. Try SPY, NVDA, or AAPL.")
-        return
+        st.warning("No options found."); return
 
     with c2: expiry = st.selectbox("Expiry", exps[:12])
     with c3: view = st.selectbox("Strategy", ["Bullish (Call Debit)", "Bearish (Put Debit)", "Neutral (Strangle)"])
 
     if st.button("Initialize Analysis", type="primary", use_container_width=True):
-        with st.spinner(f"Crunching Volatility Surface for {ticker}..."):
+        with st.spinner("Crunching..."):
             hist = stock.history(period="5d")
-            if hist.empty: 
-                st.error("Market data unavailable.")
-                return
-            current_price = hist['Close'].iloc[-1]
+            if hist.empty: return
+            curr_price = hist['Close'].iloc[-1]
             try:
-                hist_yr = stock.history(period="1y")
-                vol = np.log(hist_yr['Close']/hist_yr['Close'].shift(1)).rolling(30).std() * np.sqrt(252) * 100
-                curr_vol = vol.iloc[-1]
-                min_vol, max_vol = vol.min(), vol.max()
-                iv_rank = (curr_vol - min_vol) / (max_vol - min_vol) * 100
-            except:
-                curr_vol, iv_rank = 0, 0
+                h = stock.history(period="1y")
+                vol = np.log(h['Close']/h['Close'].shift(1)).rolling(30).std()*np.sqrt(252)*100
+                curr_vol, iv_rank = vol.iloc[-1], (vol.iloc[-1]-vol.min())/(vol.max()-vol.min())*100
+            except: curr_vol, iv_rank = 0, 0
 
-            calls, puts, rf_rate = fetch_market_data(ticker, expiry, current_price)
-            
-            if calls is None:
-                st.error("Failed to calculate Greeks.")
-                return
+            calls, puts, r = fetch_market_data(ticker, expiry, curr_price)
+            if calls is None: st.error("Math Error"); return
 
-            # --- LOGIC FIX: GAP ENFORCER ---
-            engine = VectorizedQuantEngine()
+            eng = VectorizedQuantEngine()
             trade = {}
-            
             if "Bullish" in view:
-                buy_leg = engine.find_closest_strike(calls, 0.50)
-                # Force short leg to be at least 1 strike away
-                valid_sells = calls[calls['strike'] > buy_leg['strike']]
-                if valid_sells.empty:
-                    sell_leg = buy_leg # Fallback (will show 0 cost, but handled)
-                else:
-                    sell_leg = engine.find_closest_strike(valid_sells, 0.30)
-                
-                buy_leg['side'] = "BUY"; sell_leg['side'] = "SELL"
-                buy_leg['type'] = "call"; sell_leg['type'] = "call"
-                trade = {"Legs": [buy_leg, sell_leg], "Type": "Call Debit Spread"}
-                
+                b = eng.find_closest_strike(calls, 0.50)
+                valid = calls[calls['strike'] > b['strike']]
+                s = eng.find_closest_strike(valid, 0.30) if not valid.empty else b
+                b['side'], s['side'], b['type'], s['type'] = "BUY", "SELL", "call", "call"
+                trade = {"Legs": [b, s], "Type": "Call Debit Spread"}
             elif "Bearish" in view:
-                buy_leg = engine.find_closest_strike(puts, -0.50)
-                # Force short leg to be lower strike
-                valid_sells = puts[puts['strike'] < buy_leg['strike']]
-                if valid_sells.empty:
-                    sell_leg = buy_leg
-                else:
-                    sell_leg = engine.find_closest_strike(valid_sells, -0.30)
-                
-                buy_leg['side'] = "BUY"; sell_leg['side'] = "SELL"
-                buy_leg['type'] = "put"; sell_leg['type'] = "put"
-                trade = {"Legs": [buy_leg, sell_leg], "Type": "Put Debit Spread"}
-                
+                b = eng.find_closest_strike(puts, -0.50)
+                valid = puts[puts['strike'] < b['strike']]
+                s = eng.find_closest_strike(valid, -0.30) if not valid.empty else b
+                b['side'], s['side'], b['type'], s['type'] = "BUY", "SELL", "put", "put"
+                trade = {"Legs": [b, s], "Type": "Put Debit Spread"}
             elif "Neutral" in view:
-                call_leg = engine.find_closest_strike(calls, 0.20)
-                put_leg = engine.find_closest_strike(puts, -0.20)
-                call_leg['side'] = "SELL"; put_leg['side'] = "SELL"
-                call_leg['type'] = "call"; put_leg['type'] = "put"
-                trade = {"Legs": [call_leg, put_leg], "Type": "Short Strangle"}
+                c = eng.find_closest_strike(calls, 0.20)
+                p = eng.find_closest_strike(puts, -0.20)
+                c['side'], p['side'], c['type'], p['type'] = "SELL", "SELL", "call", "put"
+                trade = {"Legs": [c, p], "Type": "Short Strangle"}
 
-            dte = (datetime.strptime(expiry, '%Y-%m-%d') - datetime.now()).days
-            st.session_state['terminal_data'] = {
-                "ticker": ticker, "current_price": current_price,
-                "iv_rank": iv_rank, "curr_vol": curr_vol, "rf_rate": rf_rate,
-                "calls": calls, "puts": puts, "trade": trade, "dte": dte
+            st.session_state['data'] = {
+                "ticker": ticker, "price": curr_price, "rank": iv_rank, "vol": curr_vol, "r": r,
+                "calls": calls, "puts": puts, "trade": trade, "dte": (datetime.strptime(expiry, '%Y-%m-%d')-datetime.now()).days
             }
 
-    if 'terminal_data' in st.session_state:
-        data = st.session_state['terminal_data']
-        if data['ticker'] != ticker: st.warning("⚠️ Inputs changed. Click 'Initialize Analysis' to update.")
-
+    if 'data' in st.session_state:
+        d = st.session_state['data']
         m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Spot Price", f"${data['current_price']:.2f}")
-        m2.metric("IV Rank", f"{data['iv_rank']:.0f}%", delta="High" if data['iv_rank']>50 else "Low", delta_color="inverse" if data['iv_rank']<50 else "normal")
-        m3.metric("Implied Vol", f"{data['curr_vol']:.1f}%")
-        m4.metric("Risk Free Rate", f"{data['rf_rate']*100:.2f}%")
+        m1.metric("Spot", f"${d['price']:.2f}")
+        m2.metric("IV Rank", f"{d['rank']:.0f}%")
+        m3.metric("IV", f"{d['vol']:.1f}%")
+        m4.metric("Risk Free", f"{d['r']*100:.2f}%")
 
         st.divider()
-        c_left, c_right = st.columns([1, 2])
+        c_l, c_r = st.columns([1, 2])
+        
+        with c_l:
+            t = d['trade']
+            cost = 0
+            rows = ""
+            for l in t['Legs']:
+                p = l.get('lastPrice', l.get('theo_price', 0))
+                cost += p if l['side']=="BUY" else -p
+                css = "leg-buy" if l['side']=="BUY" else "leg-sell"
+                rows += f'<div class="leg-row"><span class="mono"><b class="{css}">{l["side"]}</b> {l["strike"]} {l["type"].upper()}</span><span class="mono" style="color:#888;">Δ {l["delta"]:.2f} | ${p:.2f}</span></div>'
+            
+            pop = 50.0
+            if "Debit" in t['Type']:
+                l1 = t['Legs'][0]
+                move = d['price'] * (d['vol']/100) * np.sqrt(d['dte']/365.0)
+                if move > 0:
+                    be = l1['strike'] + cost if "Call" in t['Type'] else l1['strike'] - cost
+                    z = abs(d['price'] - be) / move
+                    pop = norm.sf(z) * 100
 
-        with c_left:
-            st.subheader("Trade Structure")
-            trade = data['trade']
-            if trade:
-                total_price = 0
-                rows = ""
-                for leg in trade['Legs']:
-                    price = leg.get('lastPrice', leg.get('theo_price', 0))
-                    if leg['side'] == "BUY": total_price += price
-                    else: total_price -= price
-                    
-                    # --- RENDERING FIX: FLATTENED STRINGS ---
-                    # We remove indentation from the HTML string to prevents Code Block rendering issues
-                    css = "leg-buy" if leg['side'] == "BUY" else "leg-sell"
-                    row_html = f'<div class="leg-row"><span class="mono"><b class="{css}">{leg["side"]}</b> {leg["strike"]} {leg["type"].upper()}</span><span class="mono" style="color:#888;">Δ {leg["delta"]:.2f} | ${price:.2f}</span></div>'
-                    rows += row_html
+            st.markdown(f"""
+            <div class="trade-ticket">
+                <div class="ticket-header"><span>{t['Type']}</span></div>{rows}
+                <div class="ticket-footer"><div class="cost-display"><div class="cost-val">{'Debit' if cost>0 else 'Credit'}: ${abs(cost)*100:.0f}</div></div></div>
+                <div style="margin-top:15px;padding:8px;background:rgba(255,255,255,0.05);border-radius:4px;display:flex;justify-content:space-between;">
+                    <span style="color:#888;">POP</span><span style="color:#00FF88;font-weight:bold;">{pop:.1f}%</span>
+                </div>
+            </div>""", unsafe_allow_html=True)
 
-                net_cost = total_price * 100
-                label = f"Debit: ${net_cost:.2f}" if total_price > 0 else f"Credit: ${abs(net_cost):.2f}"
-                
-                pop = 50.0
-                if "Debit" in trade['Type']:
-                    long_leg = trade['Legs'][0]
-                    vol_annual = data['curr_vol'] / 100
-                    time_annual = data['dte'] / 365.0
-                    expected_move = data['current_price'] * vol_annual * np.sqrt(time_annual)
-                    if expected_move > 0:
-                        if "Call" in trade['Type']:
-                            breakeven = long_leg['strike'] + total_price
-                            z = (breakeven - data['current_price']) / expected_move
-                            pop = norm.sf(z) * 100
-                        else:
-                            breakeven = long_leg['strike'] - total_price
-                            z = (data['current_price'] - breakeven) / expected_move
-                            pop = norm.sf(z) * 100
-                
-                # --- RENDERING FIX: FINAL HTML BLOCK ---
-                ticket_html = f"""
-<div class="trade-ticket">
-    <div class="ticket-header"><span>{trade['Type']}</span></div>
-    {rows}
-    <div class="ticket-footer">
-        <div class="cost-display"><div class="cost-val">{label}</div></div>
-    </div>
-    <div style="margin-top: 15px; padding: 8px; background: rgba(255,255,255,0.05); border-radius: 4px; display: flex; justify-content: space-between;">
-        <span style="color: #888;">Est. Probability (POP)</span>
-        <span style="color: #00FF88; font-weight: bold;">{pop:.1f}%</span>
-    </div>
-</div>
-"""
-                st.markdown(ticket_html, unsafe_allow_html=True)
-
-        with c_right:
-            st.subheader("Profit/Loss Simulation")
+        with c_r:
             l1, l2 = st.columns(2)
-            days_fwd = l1.slider("⏳ Days Forward (Theta Burn)", 0, max(1, data['dte']), 0)
-            vol_adj = l2.slider("⚡ IV Shock (%)", -50, 50, 0)
+            day = l1.slider("Days Fwd", 0, max(1, d['dte']), 0)
+            shock = l2.slider("Vol Shock", -50, 50, 0)
             
-            engine = VectorizedQuantEngine()
-            engine.r = data['rf_rate']
+            eng = VectorizedQuantEngine()
+            eng.r = d['r']
+            x = np.linspace(d['price']*0.8, d['price']*1.2, 100)
+            y = np.zeros_like(x) - (cost*100)
+            T_sim = max(0.001, (d['dte']-day)/365.0)
             
-            spot_range = np.linspace(data['current_price'] * 0.8, data['current_price'] * 1.2, 100)
-            sim_T = max(0.001, (data['dte'] - days_fwd) / 365.0)
-            pnl_sim = np.zeros_like(spot_range) - (total_price * 100)
-            
-            for leg in trade['Legs']:
-                sim_sigma = max(0.01, leg['impliedVolatility'] * (1 + vol_adj/100))
-                leg_prices = engine.black_scholes_single(spot_range, leg['strike'], sim_T, sim_sigma, leg['type'])
-                if leg['side'] == "BUY": pnl_sim += (leg_prices * 100)
-                else: pnl_sim -= (leg_prices * 100)
-
+            for l in t['Legs']:
+                sig = max(0.01, l['impliedVolatility']*(1+shock/100))
+                lp = eng.black_scholes_single(x, l['strike'], T_sim, sig, l['type'])
+                y += (lp*100) if l['side']=="BUY" else -(lp*100)
+                
             fig = go.Figure()
-            pos_mask = pnl_sim >= 0
-            neg_mask = pnl_sim < 0
-            
-            fig.add_trace(go.Scatter(x=spot_range[pos_mask], y=pnl_sim[pos_mask], mode='lines', name='Profit', line=dict(color='#00FF88', width=0), fill='tozeroy', fillcolor='rgba(0, 255, 136, 0.2)'))
-            fig.add_trace(go.Scatter(x=spot_range[neg_mask], y=pnl_sim[neg_mask], mode='lines', name='Loss', line=dict(color='#FF4B4B', width=0), fill='tozeroy', fillcolor='rgba(255, 75, 75, 0.2)'))
-            fig.add_trace(go.Scatter(x=spot_range, y=pnl_sim, mode='lines', line=dict(color='white', width=2)))
-            fig.add_vline(x=data['current_price'], line_dash="dash", line_color="#F4D03F", annotation_text="Spot")
-            fig.add_hline(y=0, line_color="#555")
-            
-            fig.update_layout(template="plotly_dark", height=350, margin=dict(l=10, r=10, t=30, b=20), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', showlegend=False, xaxis_title="Stock Price at T+" + str(days_fwd), yaxis_title="P&L ($)")
+            fig.add_trace(go.Scatter(x=x[y>=0], y=y[y>=0], fill='tozeroy', fillcolor='rgba(0,255,136,0.2)', line=dict(color='#00FF88', width=0)))
+            fig.add_trace(go.Scatter(x=x[y<0], y=y[y<0], fill='tozeroy', fillcolor='rgba(255,75,75,0.2)', line=dict(color='#FF4B4B', width=0)))
+            fig.add_trace(go.Scatter(x=x, y=y, line=dict(color='white', width=2)))
+            fig.add_vline(x=d['price'], line_dash="dash", line_color="#F4D03F")
+            fig.update_layout(template="plotly_dark", height=350, margin=dict(l=10,r=10,t=10,b=10), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', showlegend=False)
             st.plotly_chart(fig, use_container_width=True)
-
-            # --- ADDED EXPLANATION MODULE ---
-            with st.expander("📊 How to Read This Simulation", expanded=False):
+            
+            with st.expander("📊 Chart Guide", expanded=False):
                 st.markdown("""
-                **This is not a standard expiration graph.** Standard charts only show the destination; this shows the *journey*.
-                
-                * **The White Curve (Mark-to-Market):** The value of your trade *at the selected time*. It curves because of Gamma.
-                * **Green/Red Zones:** Your Profit vs. Loss. The transition point is your **Breakeven**.
-                
-                **🕹️ The Simulators:**
-                * **⏳ Days Forward (Theta):** Simulates **Time Decay**.
-                    * *Buying Options:* Watch the curve sink (you bleed value).
-                    * *Selling Options:* Watch the curve rise (you collect rent).
-                * **⚡ IV Shock (Vega):** Simulates **Panic**.
-                    * *+20%: * Market crash or Earnings. Long options inflate, Short options crash.
-                    * *-20%: * Volatility Crush. The market gets boring.
+                * **White Curve:** Value at selected date (Gamma).
+                * **Green/Red:** Profit vs Loss zones.
+                * **Simulators:** Use sliders to test Time Decay (Theta) and Panic (Vega).
                 """)
 
+# --- ROUTER ---
 with st.sidebar:
     st.title("OpStruct")
-    st.caption("Institutional Grade v4.2")
-    st.markdown("---")
-    if st.button("🏠 Home", use_container_width=True): set_page('home')
-    if st.button("🎓 Academy", use_container_width=True): set_page('academy')
-    if st.button("📐 Terminal", use_container_width=True): set_page('terminal')
-    st.markdown("---")
+    if st.button("🏠 Home"): set_page('home')
+    if st.button("🎓 Academy"): set_page('academy')
+    if st.button("📐 Terminal"): set_page('terminal')
 
 if st.session_state.page == 'home': page_home()
 elif st.session_state.page == 'academy': page_academy()
