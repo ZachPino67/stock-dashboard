@@ -2,7 +2,6 @@ import streamlit as st
 import yfinance as yf
 import numpy as np
 import plotly.graph_objects as go
-import plotly.express as px
 import requests
 from datetime import datetime
 from scipy.stats import norm
@@ -66,7 +65,6 @@ def fetch_market_data(ticker, expiry, current_price):
 #                  VIEW: HOMEPAGE
 # ==================================================
 def page_home():
-    # --- HOMEPAGE SPECIFIC CSS ---
     st.markdown("""
     <style>
         .home-container { padding: 2rem 0; border-bottom: 1px solid #30363D; }
@@ -92,7 +90,7 @@ def page_home():
         """, unsafe_allow_html=True)
         
         st.markdown("<br>", unsafe_allow_html=True)
-        b1, b2, b3 = st.columns(3) # Added War Room button
+        b1, b2, b3 = st.columns(3)
         if b1.button("🎓 Academy", type="primary", use_container_width=True): set_page('academy')
         if b2.button("📐 Terminal", use_container_width=True): set_page('terminal')
         if b3.button("⚔️ War Room", use_container_width=True): set_page('war_room')
@@ -142,11 +140,11 @@ def page_home():
         """, unsafe_allow_html=True)
 
 # ==================================================
-#                  VIEW: WAR ROOM (REBUILT)
+#                  VIEW: WAR ROOM (CLEANED)
 # ==================================================
 def page_war_room():
     st.markdown("## ⚔️ The War Room")
-    st.caption("Institutional Dashboard. Visualizing structure, flow, and correlations.")
+    st.caption("Institutional Dashboard. Know the terrain before you engage.")
     
     # --- ROW 1: THE HUD (REGIME) ---
     st.markdown("#### 📡 Market Regime HUD")
@@ -179,69 +177,27 @@ def page_war_room():
 
     st.divider()
 
-    # --- ROW 2: CORRELATIONS & SCANNER ---
-    col_l, col_r = st.columns([1, 1])
+    # --- ROW 2: OPPORTUNITY SCANNER (FULL WIDTH) ---
+    st.subheader("🔥 High IV Opportunity Scanner")
+    st.caption("Liquid tickers where Options are 'Expensive' (High IV Rank). These are prime candidates for Credit Spreads or Iron Condors.")
     
-    with col_l:
-        st.subheader("🔗 Cross-Asset Correlation (30D)")
-        st.caption("When this map turns all bright (1.0), diversification is failing.")
-        
-        with st.spinner("Calculating Matrix..."):
-            corr_matrix = market_utils.get_correlation_matrix()
-            if not corr_matrix.empty:
-                fig = px.imshow(
-                    corr_matrix, 
-                    text_auto=".2f",
-                    aspect="auto",
-                    color_continuous_scale="RdBu_r", # Red = High Correlation, Blue = Inverse
-                    zmin=-1, zmax=1
-                )
-                fig.update_layout(template="plotly_dark", height=400, margin=dict(t=20, b=20, l=20, r=20), paper_bgcolor='rgba(0,0,0,0)')
-                st.plotly_chart(fig, use_container_width=True)
-            else:
-                st.info("Correlation data unavailable.")
-
-    with col_r:
-        st.subheader("🔥 High IV Opportunity Scanner")
-        st.caption("Liquid tickers where Options are 'Expensive' (High IV Rank).")
-        
-        with st.spinner("Scanning Watchlist..."):
-            vol_df = market_utils.scan_volatility_opportunities()
-            if not vol_df.empty:
-                st.dataframe(
-                    vol_df, 
-                    column_config={
-                        "Ticker": "Symbol",
-                        "Price": st.column_config.NumberColumn(format="$%.2f"),
-                        "IV Rank": st.column_config.ProgressColumn(format="%.0f%%", min_value=0, max_value=100),
-                        "Current IV": st.column_config.NumberColumn(format="%.1f%%")
-                    },
-                    hide_index=True,
-                    use_container_width=True,
-                    height=400
-                )
-            else:
-                st.info("Scanner offline.")
-
-    st.divider()
-    
-    # --- ROW 3: SECTOR MOMENTUM ---
-    st.subheader("🌊 Sector Rotation (5-Day Momentum)")
-    with st.spinner("Tracking Flows..."):
-        sector_df = market_utils.get_sector_momentum()
-        if not sector_df.empty:
-            fig = go.Figure()
-            colors = ['#00FF88' if v > 0 else '#FF4B4B' for v in sector_df['Change']]
-            fig.add_trace(go.Bar(
-                x=sector_df['Ticker'], y=sector_df['Change'],
-                marker_color=colors, text=sector_df['Name'], textposition='auto'
-            ))
-            fig.update_layout(
-                template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-                height=350, margin=dict(t=20, b=50, l=50, r=20),
-                yaxis_title="% Change (5D)", xaxis_title="Sector ETF"
+    with st.spinner("Scanning Liquid Watchlist..."):
+        vol_df = market_utils.scan_volatility_opportunities()
+        if not vol_df.empty:
+            st.dataframe(
+                vol_df, 
+                column_config={
+                    "Ticker": "Symbol",
+                    "Price": st.column_config.NumberColumn(format="$%.2f"),
+                    "IV Rank": st.column_config.ProgressColumn(format="%.0f%%", min_value=0, max_value=100),
+                    "Current IV": st.column_config.NumberColumn(format="%.1f%%")
+                },
+                hide_index=True,
+                use_container_width=True,
+                height=500 
             )
-            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("Scanner offline (API Limits). Try again in 60s.")
 
 # ==================================================
 #                  VIEW: ACADEMY
@@ -431,7 +387,7 @@ def page_terminal():
 # --- ROUTER ---
 with st.sidebar:
     st.title("OpStruct")
-    st.caption("Institutional Grade v5.0")
+    st.caption("Institutional Grade v5.1")
     st.markdown("---")
     if st.button("🏠 Home", use_container_width=True): set_page('home')
     if st.button("⚔️ War Room", use_container_width=True): set_page('war_room')
